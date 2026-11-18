@@ -11,7 +11,7 @@ A small, self-hosted bookmark manager for people who move between browsers. One 
 - **Easy to add**: paste an address into the search box, use the bookmarklet, share to it on Android, or post to the API from an iOS Shortcut
 - **No duplicates**: the same page saved twice is one bookmark, whatever the scheme, `www.`, trailing slash or tracking parameters
 - **Strip tracking**: `utm_*`, `fbclid`, `gclid` and friends are removed on save, with a checkbox to keep the address as it is
-- **Tag suggestions**, optional: with an Anthropic API key, new bookmarks get suggested tags that prefer the ones you already use
+- **Tag suggestions**, optional: with an Anthropic API key, new bookmarks get suggested tags that prefer the ones you already use, and bookmarks left without tags after an import can be tagged in one go
 - **Import and export**: reads the bookmarks HTML file every browser exports, in the browser, folders become tags; bookmarks and notes download as JSON
 - Private, always: only visitors authenticated by [Cloudflare Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) see anything
 - Light and dark mode, works on a phone, can be added to the home screen
@@ -59,7 +59,7 @@ Set a long session duration on the Access application (a month, say), so each br
 | `SITE_TITLE`   | `marks`            | Name in the top bar and on the home screen icon. |
 | `TAG_MODEL`    | `claude-haiku-5-5` | Claude model used for tag suggestions. |
 
-Secret, optional: `ANTHROPIC_API_KEY`. Set it with `npm run wrangler secret put ANTHROPIC_API_KEY` or in the dashboard to turn tag suggestions on. The Worker then sends the address, title and description of a new bookmark, plus your list of tag names, to the Anthropic API. Without the key nothing leaves the Worker except the requests that read a page's title and icon.
+Secret, optional: `ANTHROPIC_API_KEY`. Set it with `npm run wrangler secret put ANTHROPIC_API_KEY` or in the dashboard to turn tag suggestions on. The Worker then sends the address, title and description of a new bookmark, plus your list of tag names, to the Anthropic API. Tagging untagged bookmarks from the Settings page, or after an import with its box ticked, sends the address and title of each of them. Without the key nothing leaves the Worker except the requests that read a page's title and icon.
 
 ## Adding bookmarks
 
@@ -100,7 +100,7 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
 
 **Duplicates** are found by a normalized form of the address (`url_norm`, unique): no scheme, no `www.`, no tracking parameters, no trailing slash, no fragment unless the fragment is a route. Adding an address that is already there opens that bookmark for editing; through the API it updates the bookmark and merges the tags. Either way an archived bookmark comes back. The address that is stored and opened is the one you saved, without tracking parameters unless you untick the box.
 
-**Import**: the Settings page reads the exported file in the browser, which has a real HTML parser and no CPU limit, and sends the links to the Worker 500 at a time. The Worker decides what is a duplicate and which folders become tags, so a large file costs it no more per request than a small one. Running an import twice adds nothing twice.
+**Import**: the Settings page reads the exported file in the browser, which has a real HTML parser and no CPU limit, and sends the links to the Worker 500 at a time. The Worker decides what is a duplicate and which folders become tags, so a large file costs it no more per request than a small one. Running an import twice adds nothing twice. With tag suggestions on, the page then asks the Worker to tag the bookmarks that have no tags, 50 per request and one call to the model for each 50, until none are left.
 
 **Lists** show 200 bookmarks per page, newest first.
 
@@ -110,7 +110,7 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
 
 **Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid), `bookmark_tags`, `icons` and `notes`. Quick access and read later are fields, not tags.
 
-**API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `POST /api/note` with `{ "text": "..." }`, `POST /api/import` with `{ "items": [{ "url", "title", "folders", "created" }] }` (at most 500), `GET /api/export`.
+**API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `POST /api/note` with `{ "text": "..." }`, `POST /api/import` with `{ "items": [{ "url", "title", "folders", "created" }] }` (at most 500), `POST /api/tag` with `{ "after": id }` (tags the next 50 untagged bookmarks), `GET /api/export`.
 
 ## Develop
 

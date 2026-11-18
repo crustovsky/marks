@@ -40,5 +40,51 @@
       added += (await res.json()).added;
     }
     status.textContent = `Imported ${added} new bookmarks out of ${items.length} links in the file.`;
+    if (form.elements.tag?.checked) await tagUntagged();
+  });
+
+  // Tag suggestions for bookmarks without tags, when the tagger is on. The
+  // Worker tags one batch per call, so this asks until nothing is left.
+  const tagForm = document.querySelector("#tag-untagged");
+  const tagStatus = document.querySelector("#tag-status");
+  let tagging = false;
+
+  async function tagUntagged() {
+    if (tagging) return;
+    tagging = true;
+    tagStatus.textContent = "Tagging";
+    let asked = 0;
+    let tagged = 0;
+    for (let after = 0; ; ) {
+      const res = await fetch("/api/tag", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ after }),
+      }).catch(() => null);
+      if (!res?.ok) {
+        tagStatus.textContent = `Tagging stopped after ${tagged} bookmarks. Press the button to carry on with the rest.`;
+        break;
+      }
+      const batch = await res.json();
+      asked += batch.asked;
+      tagged += batch.tagged;
+      after = batch.next;
+      if (!batch.left) {
+        // Finished: say which of the three ways it ended, since "tagged 0" alone reads like a failure.
+        tagStatus.textContent = !asked
+          ? "Every bookmark already has a tag, so there was nothing to do."
+          : !tagged
+            ? `The model suggested no tags for the ${asked} bookmarks without any.`
+            : `Done. Tagged ${tagged} of ${asked} bookmarks without tags. Reload the page to see them.`;
+        break;
+      }
+      tagStatus.textContent = `Tagging, ${batch.left} left`;
+    }
+    tagging = false;
+  }
+
+  tagForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    tagUntagged();
   });
 })();

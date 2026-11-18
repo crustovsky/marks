@@ -174,6 +174,33 @@ export async function addTags(db: D1Database, id: number, tags: string[], auto: 
   if (tags.length) await addTagsStmt(db, id, tags, auto).run();
 }
 
+// The next bookmarks without any tag, by id after the given one, and how many
+// there are from there on. Archived ones are left alone.
+export async function untagged(db: D1Database, after: number, limit: number): Promise<{ items: { id: number; url: string; title: string }[]; left: number }> {
+  const where = "b.id > ?1 AND b.status != 'archived' AND NOT EXISTS (SELECT 1 FROM bookmark_tags t WHERE t.bookmark_id = b.id)";
+  const [rows, count] = await db.batch([
+    db.prepare(`SELECT b.id, b.url, b.title FROM bookmarks b WHERE ${where} ORDER BY b.id LIMIT ?2`).bind(after, limit),
+    db.prepare(`SELECT count(*) AS n FROM bookmarks b WHERE ${where}`).bind(after),
+  ]);
+  return {
+    items: rows.results as { id: number; url: string; title: string }[],
+    left: (count.results[0] as { n: number }).n,
+  };
+}
+
+// Tags from the tagger for many bookmarks, one statement.
+export async function addAutoTags(db: D1Database, items: { id: number; tags: string[] }[]): Promise<void> {
+  if (!items.length) return;
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag, auto)
+       SELECT json_extract(j.value, '$.id'), g.value, 1
+       FROM json_each(?1) j, json_each(json_extract(j.value, '$.tags')) g`,
+    )
+    .bind(JSON.stringify(items))
+    .run();
+}
+
 export async function setStatus(db: D1Database, id: number, status: Status): Promise<void> {
   await db.prepare("UPDATE bookmarks SET status = ?, updated_at = ? WHERE id = ?").bind(status, now(), id).run();
 }

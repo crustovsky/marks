@@ -441,6 +441,11 @@ export const Settings: FC<{ nav: Nav; origin: string; tagger: boolean }> = ({ na
         <form id="import" class="inline">
           <input type="file" name="file" accept=".html,.htm,text/html" required aria-label="Bookmarks file" />
           <button class="btn primary">Import</button>
+          {tagger && (
+            <label>
+              <input type="checkbox" name="tag" checked /> Suggest tags for bookmarks left without any
+            </label>
+          )}
         </form>
         <p id="import-status" role="status"></p>
         <script src="/import.js" defer></script>
@@ -460,6 +465,15 @@ export const Settings: FC<{ nav: Nav; origin: string; tagger: boolean }> = ({ na
           <h2>Tag suggestions</h2>
         </div>
         <p>{tagger ? "On. New bookmarks get suggested tags from the Claude API." : "Off. Set the ANTHROPIC_API_KEY secret on the Worker to turn them on."}</p>
+        {tagger && (
+          <>
+            <p>Bookmarks without any tag, from an import for example, can be tagged in one go. Their addresses and titles are sent to the Claude API.</p>
+            <form id="tag-untagged" class="inline">
+              <button class="btn">Tag untagged bookmarks</button>
+            </form>
+            <p id="tag-status" role="status"></p>
+          </>
+        )}
       </section>
     </Layout>
   );

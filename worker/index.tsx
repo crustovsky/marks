@@ -13,7 +13,7 @@ import { ensureSchema } from "./schema";
 import script from "./static/app.js";
 import importer from "./static/import.js";
 import styles from "./static/app.css";
-import { suggestTags } from "./tagger";
+import { suggestTags, suggestTagsBulk } from "./tagger";
 import { cleanTags, cleanUrl, folderTags, looksLikeUrl, parseUrl } from "./url";
 import { Closing, Form, Home, List, Settings, Tags } from "./views";
 import type { FormValues, Nav } from "./views";
@@ -337,6 +337,23 @@ app.post("/api/import", async (c) => {
     })),
   );
   return c.json({ added });
+});
+
+// Tags one batch of bookmarks that have no tags, with a single call to the model.
+// The Settings page calls this until nothing is left: { after } is the last id
+// of the batch before, so a bookmark the model had nothing for is not asked about again.
+const TAG_BATCH = 50;
+
+app.post("/api/tag", async (c) => {
+  if (!c.var.cfg.apiKey) return c.json({ error: "tag suggestions are off" }, 400);
+  const body = await c.req.json<{ after?: unknown }>().catch(() => ({ after: 0 }));
+  const after = Number(body.after) || 0;
+  const [{ items, left }, counts] = await Promise.all([db.untagged(c.env.DB, after, TAG_BATCH), db.tagCounts(c.env.DB)]);
+  if (!items.length) return c.json({ asked: 0, tagged: 0, next: after, left: 0 });
+  const tags = await suggestTagsBulk(c.var.cfg, items, counts.map((t) => t.tag));
+  if (!tags) return c.json({ error: "the tagger did not answer" }, 502);
+  await db.addAutoTags(c.env.DB, tags);
+  return c.json({ asked: items.length, tagged: tags.length, next: items[items.length - 1].id, left: left - items.length });
 });
 
 // { text }: a quick note from a script or the iOS Shortcut.
