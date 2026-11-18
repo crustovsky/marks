@@ -27,6 +27,13 @@ const SCHEMA = [
     data BLOB NOT NULL,
     fetched_at INTEGER NOT NULL
   )`,
+  // Quick notes: a line of text that is open until marked done.
+  `CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    done_at INTEGER
+  )`,
   `CREATE INDEX IF NOT EXISTS bookmarks_status ON bookmarks (status, created_at)`,
   `CREATE INDEX IF NOT EXISTS bookmark_tags_tag ON bookmark_tags (tag)`,
 ];

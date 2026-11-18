@@ -77,9 +77,15 @@ export async function byUrl(db: D1Database, url: URL): Promise<Bookmark | null> 
 }
 
 export async function counts(db: D1Database): Promise<Record<Status, number>> {
-  const { results } = await db.prepare("SELECT status, count(*) AS n FROM bookmarks GROUP BY status").all<{ status: Status; n: number }>();
+  // Done notes count as archived, next to the archived bookmarks.
+  const { results } = await db
+    .prepare(
+      `SELECT status, count(*) AS n FROM bookmarks GROUP BY status
+       UNION ALL SELECT 'archived', count(*) FROM notes WHERE done_at IS NOT NULL`,
+    )
+    .all<{ status: Status; n: number }>();
   const out = { saved: 0, later: 0, archived: 0 };
-  for (const r of results) out[r.status] = r.n;
+  for (const r of results) out[r.status] += r.n;
   return out;
 }
 
@@ -203,6 +209,33 @@ export async function setIcon(db: D1Database, id: number, type: string, data: Ar
 export async function getIcon(db: D1Database, id: number): Promise<{ type: string; data: Uint8Array } | null> {
   const row = await db.prepare("SELECT type, data FROM icons WHERE bookmark_id = ?").bind(id).first<{ type: string; data: ArrayLike<number> }>();
   return row ? { type: row.type, data: new Uint8Array(row.data) } : null;
+}
+
+export interface Note {
+  id: number;
+  text: string;
+  created_at: number;
+  done_at: number | null;
+}
+
+export async function notes(db: D1Database, done: boolean): Promise<Note[]> {
+  const sql = done
+    ? "SELECT * FROM notes WHERE done_at IS NOT NULL ORDER BY done_at DESC LIMIT 200"
+    : "SELECT * FROM notes WHERE done_at IS NULL ORDER BY created_at DESC, id DESC";
+  return (await db.prepare(sql).all<Note>()).results;
+}
+
+export async function addNote(db: D1Database, text: string): Promise<number> {
+  const row = await db.prepare("INSERT INTO notes (text, created_at) VALUES (?, ?) RETURNING id").bind(text, now()).first<{ id: number }>();
+  return row!.id;
+}
+
+export async function setNoteDone(db: D1Database, id: number, done: boolean): Promise<void> {
+  await db.prepare("UPDATE notes SET done_at = ? WHERE id = ?").bind(done ? now() : null, id).run();
+}
+
+export async function removeNote(db: D1Database, id: number): Promise<void> {
+  await db.prepare("DELETE FROM notes WHERE id = ?").bind(id).run();
 }
 
 export interface ImportItem {

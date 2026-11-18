@@ -30,6 +30,7 @@ Run `npm test` and `npm run check` before calling a change done. For anything th
 - **Escaping**: pages are JSX, which escapes for you. Do not build HTML from strings and do not use `dangerouslySetInnerHTML`.
 - **State changes are POST** forms or JSON calls. The `csrf()` middleware rejects form posts from other origins.
 - **Content from other sites** (titles, icons) is untrusted. Titles go through JSX; icons are served with a sandboxing CSP and only ever used in `<img>`.
+- **Quick notes stay small**: plain text, open or done, nothing else. No editing, titles, tags or markdown; this is not a notes app.
 - **The tagger is optional.** Every path must work with `ANTHROPIC_API_KEY` unset, and a failed API call must never fail a save.
 
 ## Style

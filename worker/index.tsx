@@ -85,13 +85,14 @@ function back(c: Ctx): Response {
 }
 
 app.get("/", async (c) => {
-  const [n, pinned, later, recent] = await Promise.all([
+  const [n, pinned, notes, later, recent] = await Promise.all([
     nav(c),
     db.pinned(c.env.DB),
+    db.notes(c.env.DB, false),
     db.list(c.env.DB, { status: "later", limit: 5 }),
     db.list(c.env.DB, { status: "saved", limit: 10 }),
   ]);
-  return page(c, <Home nav={n} pinned={pinned} later={later} recent={recent} />);
+  return page(c, <Home nav={n} pinned={pinned} notes={notes} later={later} recent={recent} />);
 });
 
 // The box in the top bar: an address is something to save, anything else a search.
@@ -104,9 +105,10 @@ app.get("/go", (c) => {
 app.get("/list", async (c) => {
   const { view, tag, q } = c.req.query();
   const status = view === "later" || view === "archived" ? view : undefined;
-  const [n, items] = await Promise.all([nav(c), db.list(c.env.DB, { status, tag, q })]);
+  const archive = status === "archived" && !tag && !q;
+  const [n, items, notes] = await Promise.all([nav(c), db.list(c.env.DB, { status, tag, q }), archive ? db.notes(c.env.DB, true) : []]);
   const heading = q ? `Search: ${q}` : tag ? `Tag: ${tag}` : status === "later" ? "Read later" : status === "archived" ? "Archive" : "All bookmarks";
-  return page(c, <List nav={n} active={q || tag ? "" : (status ?? "all")} heading={heading} items={items} q={q} tag={tag} />);
+  return page(c, <List nav={n} active={q || tag ? "" : (status ?? "all")} heading={heading} items={items} notes={notes} q={q} tag={tag} />);
 });
 
 app.get("/tags", async (c) => page(c, <Tags nav={await nav(c)} />));
@@ -227,6 +229,27 @@ app.post("/b/:id/delete", async (c) => {
   return popup ? page(c, <Closing title={c.var.cfg.title} />) : c.redirect("/", 303);
 });
 
+// Quick notes: added from the home page, done moves them to the archive.
+
+const NOTE_MAX = 2000;
+
+app.post("/note", async (c) => {
+  const text = String((await c.req.parseBody()).text ?? "").trim().slice(0, NOTE_MAX);
+  if (text) await db.addNote(c.env.DB, text);
+  return back(c);
+});
+
+app.post("/n/:id/done", async (c) => {
+  const done = (await c.req.parseBody()).done === "1";
+  await db.setNoteDone(c.env.DB, Number(c.req.param("id")), done);
+  return back(c);
+});
+
+app.post("/n/:id/delete", async (c) => {
+  await db.removeNote(c.env.DB, Number(c.req.param("id")));
+  return back(c);
+});
+
 app.get("/settings", async (c) => {
   const added = c.req.query("imported");
   const message = added ? `Imported ${added} new bookmarks out of ${c.req.query("of")} in the file.` : undefined;
@@ -284,7 +307,17 @@ app.post("/api/add", async (c) => {
   return c.json({ id, url: cleanUrl(url, strip), title: info.title });
 });
 
-app.get("/api/export", async (c) => c.json(await db.exportAll(c.env.DB)));
+// { text }: a quick note from a script or the iOS Shortcut.
+app.post("/api/note", async (c) => {
+  const text = String((await c.req.json<{ text?: string }>()).text ?? "").trim().slice(0, NOTE_MAX);
+  if (!text) return c.json({ error: "text is missing" }, 400);
+  return c.json({ id: await db.addNote(c.env.DB, text) });
+});
+
+app.get("/api/export", async (c) => {
+  const [bookmarks, open, done] = await Promise.all([db.exportAll(c.env.DB), db.notes(c.env.DB, false), db.notes(c.env.DB, true)]);
+  return c.json({ bookmarks, notes: [...open, ...done] });
+});
 
 app.onError((e, c) => {
   if (e instanceof HTTPException) return e.getResponse();

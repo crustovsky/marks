@@ -105,6 +105,13 @@ img.letter { object-fit: contain; }
 .actions button, .actions a { min-height: 36px; padding: 0 10px; display: inline-flex; align-items: center; background: none; border: 1px solid var(--line2); border-radius: 8px; font-size: 13px; }
 .actions a { border-color: transparent; color: var(--muted); }
 
+/* quick notes */
+.add-note { display: flex; gap: 8px; }
+.add-note input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; }
+.add-note input:focus { outline: 0; border-color: var(--accent); }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.what .text a { display: inline; font-weight: inherit; white-space: inherit; text-decoration: underline; }
+
 /* add and edit */
 .form { max-width: 560px; }
 .form form#save { display: flex; flex-direction: column; gap: 14px; }

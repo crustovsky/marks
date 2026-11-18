@@ -7,11 +7,12 @@ A small, self-hosted bookmark manager for people who move between browsers. One 
 - **Quick access**: a grid of pinned sites with their icons, reordered by drag and drop
 - **Bookmarks**: tags instead of folders, search over title, address, note and tags
 - **Read later**: a queue with Done and Keep, separate from the bookmarks you keep
+- **Quick notes**: a line of text jotted on the home page, marked done when dealt with, kept in the archive
 - **Easy to add**: paste an address into the search box, use the bookmarklet, share to it on Android, or post to the API from an iOS Shortcut
 - **No duplicates**: the same page saved twice is one bookmark, whatever the scheme, `www.`, trailing slash or tracking parameters
 - **Strip tracking**: `utm_*`, `fbclid`, `gclid` and friends are removed on save, with a checkbox to keep the address as it is
 - **Tag suggestions**, optional: with an Anthropic API key, new bookmarks get suggested tags that prefer the ones you already use
-- **Import and export**: reads the bookmarks HTML file every browser exports, folders become tags; everything downloads as JSON
+- **Import and export**: reads the bookmarks HTML file every browser exports, folders become tags; bookmarks and notes download as JSON
 - Private, always: only visitors authenticated by [Cloudflare Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) see anything
 - Light and dark mode, works on a phone, installs as an app
 - Under 20 KB of markup, styles and script per page; fits in the free tiers of Workers and D1
@@ -101,9 +102,9 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
 
 **Icons**: a pinned bookmark gets its site icon, read from the page (`apple-touch-icon`, then `rel="icon"`, then `/favicon.ico`) and kept in D1. Until it arrives, and for sites without one, the tile shows a coloured letter. In Edit mode each tile has a button that fetches the icon again.
 
-**Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid) `bookmark_tags` and `icons`. Quick access and read later are fields, not tags.
+**Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid) `bookmark_tags`, `icons` and `notes`. Quick access and read later are fields, not tags.
 
-**API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `GET /api/export`.
+**API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `POST /api/note` with `{ "text": "..." }`, `GET /api/export`.
 
 ## Develop
 

@@ -2,7 +2,7 @@
 // few things that need a script.
 
 import type { Child, FC } from "hono/jsx";
-import type { Bookmark, Status } from "./db";
+import type { Bookmark, Note, Status } from "./db";
 
 export interface Nav {
   title: string;
@@ -159,7 +159,47 @@ const Rows: FC<{ items: Bookmark[]; empty: string }> = ({ items, empty }) =>
     <p class="empty">{empty}</p>
   );
 
-export const Home: FC<{ nav: Nav; pinned: Bookmark[]; later: Bookmark[]; recent: Bookmark[] }> = ({ nav, pinned, later, recent }) => (
+// Note text with its addresses turned into links.
+const Linked: FC<{ text: string }> = ({ text }) => (
+  <span class="text">
+    {text.split(/(https?:\/\/\S+)/).map((part, i) =>
+      i % 2 ? (
+        <a href={part} rel="noreferrer">
+          {part}
+        </a>
+      ) : (
+        part
+      ),
+    )}
+  </span>
+);
+
+const Notes: FC<{ items: Note[] }> = ({ items }) => (
+  <ul class="rows">
+    {items.map((n) => (
+      <li class="row">
+        <div class="what">
+          <Linked text={n.text} />
+          <span class="meta">{ago(n.done_at ?? n.created_at)}</span>
+        </div>
+        <form class="actions" method="post" action={`/n/${n.id}/done`}>
+          {n.done_at ? (
+            <button name="done" value="0">
+              Restore
+            </button>
+          ) : (
+            <button name="done" value="1">
+              Done
+            </button>
+          )}
+          {n.done_at && <button formaction={`/n/${n.id}/delete`}>Delete</button>}
+        </form>
+      </li>
+    ))}
+  </ul>
+);
+
+export const Home: FC<{ nav: Nav; pinned: Bookmark[]; notes: Note[]; later: Bookmark[]; recent: Bookmark[] }> = ({ nav, pinned, notes, later, recent }) => (
   <Layout nav={nav} active="home">
     <section>
       <div class="head">
@@ -197,6 +237,16 @@ export const Home: FC<{ nav: Nav; pinned: Bookmark[]; later: Bookmark[]; recent:
         <p class="empty">Nothing pinned yet. Tick "Quick access" when you save or edit a bookmark.</p>
       )}
     </section>
+    <section>
+      <div class="head">
+        <h2>Quick notes</h2>
+      </div>
+      <form method="post" action="/note" class="add-note">
+        <input name="text" type="text" required maxlength={2000} placeholder="Jot something down" aria-label="Quick note" autocomplete="off" />
+        <button class="btn">Add</button>
+      </form>
+      {notes.length > 0 && <Notes items={notes} />}
+    </section>
     {later.length > 0 && (
       <section>
         <div class="head">
@@ -216,7 +266,7 @@ export const Home: FC<{ nav: Nav; pinned: Bookmark[]; later: Bookmark[]; recent:
   </Layout>
 );
 
-export const List: FC<{ nav: Nav; active: string; heading: string; items: Bookmark[]; q?: string; tag?: string }> = (p) => (
+export const List: FC<{ nav: Nav; active: string; heading: string; items: Bookmark[]; notes: Note[]; q?: string; tag?: string }> = (p) => (
   <Layout nav={p.nav} active={p.active} q={p.q}>
     <section>
       <div class="head">
@@ -228,6 +278,15 @@ export const List: FC<{ nav: Nav; active: string; heading: string; items: Bookma
       </div>
       <Rows items={p.items} empty="Nothing here." />
     </section>
+    {p.notes.length > 0 && (
+      <section>
+        <div class="head">
+          <h2>Done notes</h2>
+          <span class="n">{p.notes.length}</span>
+        </div>
+        <Notes items={p.notes} />
+      </section>
+    )}
   </Layout>
 );
 
