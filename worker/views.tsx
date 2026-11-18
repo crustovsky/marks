@@ -418,11 +418,10 @@ export const Closing: FC<{ title: string }> = ({ title }) => (
   </html>
 );
 
-export const Settings: FC<{ nav: Nav; origin: string; tagger: boolean; message?: string }> = ({ nav, origin, tagger, message }) => {
+export const Settings: FC<{ nav: Nav; origin: string; tagger: boolean }> = ({ nav, origin, tagger }) => {
   const bookmarklet = `javascript:(()=>{window.open('${origin}/add?popup=1&url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'marks','width=480,height=640')})()`;
   return (
     <Layout nav={nav} active="settings">
-      {message && <p class="note">{message}</p>}
       <section>
         <div class="head">
           <h2>Bookmarklet</h2>
@@ -438,11 +437,13 @@ export const Settings: FC<{ nav: Nav; origin: string; tagger: boolean; message?:
         <div class="head">
           <h2>Import</h2>
         </div>
-        <p>Upload the bookmarks HTML file your browser exports. Folders become tags, and bookmarks you already have only gain tags.</p>
-        <form method="post" action="/import" enctype="multipart/form-data" class="inline">
+        <p>Choose the bookmarks HTML file your browser exports. It is read here in the browser. Folders become tags, and bookmarks you already have only gain tags.</p>
+        <form id="import" class="inline">
           <input type="file" name="file" accept=".html,.htm,text/html" required aria-label="Bookmarks file" />
           <button class="btn primary">Import</button>
         </form>
+        <p id="import-status" role="status"></p>
+        <script src="/import.js" defer></script>
       </section>
       <section>
         <div class="head">

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseBookmarks } from "../worker/import";
 import { decode } from "../worker/page";
-import { cleanTags, cleanUrl, looksLikeUrl, normalizeUrl, parseUrl } from "../worker/url";
+import { cleanTags, cleanUrl, folderTags, looksLikeUrl, normalizeUrl, parseUrl } from "../worker/url";
 
 const norm = (s: string) => normalizeUrl(parseUrl(s)!);
 
@@ -54,25 +53,9 @@ describe("decode", () => {
   });
 });
 
-describe("parseBookmarks", () => {
-  const html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
-<DL><p>
-  <DT><H3 PERSONAL_TOOLBAR_FOLDER="true">Bookmarks bar</H3>
-  <DL><p>
-    <DT><A HREF="https://example.com/" ADD_DATE="1700000000">Example &amp; Co</A>
-    <DT><H3>Dev Tools</H3>
-    <DL><p>
-      <DT><A HREF="https://example.org/docs?utm_source=x">Docs</A>
-      <DT><A HREF="place:sort=8">Most visited</A>
-    </DL><p>
-  </DL><p>
-  <DT><A HREF="https://example.net/">Loose</A>
-</DL><p>`;
-  it("reads links, dates and folder names as tags", () => {
-    expect(parseBookmarks(html)).toEqual([
-      { url: "https://example.com/", title: "Example & Co", tags: [], created: 1700000000 },
-      { url: "https://example.org/docs?utm_source=x", title: "Docs", tags: ["dev-tools"], created: 0 },
-      { url: "https://example.net/", title: "Loose", tags: [], created: 0 },
-    ]);
+describe("folderTags", () => {
+  it("drops the browser's own top level folders and joins words", () => {
+    expect(folderTags(["Bookmarks bar", "Dev Tools", " House "])).toEqual(["dev-tools", "house"]);
+    expect(folderTags(["Favorites", "Other Bookmarks"])).toEqual([]);
   });
 });

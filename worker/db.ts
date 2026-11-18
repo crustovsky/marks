@@ -247,8 +247,9 @@ export interface ImportItem {
   created: number; // unix seconds, 0 when unknown
 }
 
-// Two statements per 500 bookmarks: existing ones keep their fields and gain the tags.
-export async function importAll(db: D1Database, items: ImportItem[]): Promise<{ added: number; total: number }> {
+// One batch of an import, two statements however many bookmarks it holds:
+// existing ones keep their fields and gain the tags.
+export async function importAll(db: D1Database, items: ImportItem[]): Promise<number> {
   const byNorm = new Map<string, { u: string; n: string; t: string; c: number; g: string[] }>();
   for (const it of items) {
     const u = URL.canParse(it.url) ? new URL(it.url) : null;
@@ -258,13 +259,8 @@ export async function importAll(db: D1Database, items: ImportItem[]): Promise<{ 
     if (dupe) dupe.g = [...new Set([...dupe.g, ...it.tags])];
     else byNorm.set(n, { u: cleanUrl(u, true), n, t: it.title, c: it.created || now(), g: it.tags });
   }
-  const rows = [...byNorm.values()];
-  let added = 0;
-  for (let i = 0; i < rows.length; i += 500) added += await importChunk(db, JSON.stringify(rows.slice(i, i + 500)));
-  return { added, total: rows.length };
-}
-
-async function importChunk(db: D1Database, json: string): Promise<number> {
+  if (!byNorm.size) return 0;
+  const json = JSON.stringify([...byNorm.values()]);
   const [ins] = await db.batch([
     db
       .prepare(

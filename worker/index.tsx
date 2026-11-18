@@ -8,13 +8,13 @@ import { loadConfig } from "./config";
 import type { Config } from "./config";
 import * as db from "./db";
 import type { Status } from "./db";
-import { parseBookmarks } from "./import";
 import { fetchIcon, fetchPage } from "./page";
 import { ensureSchema } from "./schema";
 import script from "./static/app.js";
+import importer from "./static/import.js";
 import styles from "./static/app.css";
 import { suggestTags } from "./tagger";
-import { cleanTags, cleanUrl, looksLikeUrl, parseUrl } from "./url";
+import { cleanTags, cleanUrl, folderTags, looksLikeUrl, parseUrl } from "./url";
 import { Closing, Form, Home, List, Settings, Tags } from "./views";
 import type { FormValues, Nav } from "./views";
 
@@ -51,6 +51,7 @@ const asset = (body: string, type: string) => () =>
 
 app.get("/app.css", asset(styles, "text/css"));
 app.get("/app.js", asset(script, "text/javascript"));
+app.get("/import.js", asset(importer, "text/javascript"));
 app.get("/sortable.js", asset(sortable, "text/javascript"));
 app.get(
   "/icon.svg",
@@ -273,18 +274,9 @@ app.post("/n/:id/delete", async (c) => {
   return back(c);
 });
 
-app.get("/settings", async (c) => {
-  const added = c.req.query("imported");
-  const message = added ? `Imported ${added} new bookmarks out of ${c.req.query("of")} in the file.` : undefined;
-  return page(c, <Settings nav={await nav(c)} origin={new URL(c.req.url).origin} tagger={!!c.var.cfg.apiKey} message={message} />);
-});
-
-app.post("/import", async (c) => {
-  const file = (await c.req.parseBody()).file;
-  if (!(file instanceof File)) return c.text("no file", 400);
-  const { added, total } = await db.importAll(c.env.DB, parseBookmarks(await file.text()));
-  return c.redirect(`/settings?imported=${added}&of=${total}`, 303);
-});
+app.get("/settings", async (c) =>
+  page(c, <Settings nav={await nav(c)} origin={new URL(c.req.url).origin} tagger={!!c.var.cfg.apiKey} />),
+);
 
 // JSON API. Same Access gate as the pages; scripts and the iOS Shortcut use a service token.
 
@@ -328,6 +320,23 @@ app.post("/api/add", async (c) => {
     );
   }
   return c.json({ id, url: cleanUrl(url, strip), title: info.title });
+});
+
+// One batch of a bookmarks import. The Settings page reads the file in the
+// browser and sends the links here: { items: [{ url, title, folders, created }] }.
+app.post("/api/import", async (c) => {
+  const { items } = await c.req.json<{ items?: { url?: unknown; title?: unknown; folders?: unknown; created?: unknown }[] }>();
+  if (!Array.isArray(items) || items.length > 500) return c.json({ error: "items must be a list of at most 500" }, 400);
+  const added = await db.importAll(
+    c.env.DB,
+    items.map((it) => ({
+      url: String(it.url ?? ""),
+      title: String(it.title ?? "").slice(0, 300),
+      tags: folderTags(Array.isArray(it.folders) ? it.folders.map(String) : []),
+      created: Number(it.created) || 0,
+    })),
+  );
+  return c.json({ added });
 });
 
 // { text }: a quick note from a script or the iOS Shortcut.

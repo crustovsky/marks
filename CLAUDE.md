@@ -15,8 +15,13 @@ Run `npm test` and `npm run check` before calling a change done. For anything th
 
 ## Principles
 
-- Simple and readable beats clever. Less code is the goal; add a dependency or an abstraction only when it removes more than it adds.
-- The pages must work without JavaScript, except drag to reorder, the tag picker and tag suggestions. No client framework, no build step.
+- Less is more. Simple and readable beats clever; add a dependency or an abstraction only when it removes more than it adds.
+- The right tool for the task. Each piece of work is done where it fits best, not where a rule says everything goes:
+  - Pages are rendered on the server and work without JavaScript. That is the default, not a ban on scripts.
+  - The browser does what it is better at: drag to reorder, the tag picker, and reading an imported bookmarks file (it has a real HTML parser and no CPU limit, the Worker has neither).
+  - The Worker does what only it can: fetching other sites for titles and icons, and deciding what is stored. Rules about data (duplicates, cleaning, tags) stay on the server even when the browser prepares the input.
+- When a change is easier or smaller on the other side, move it there and say why in a comment. Prefer deleting the old path to keeping two.
+- No client framework, no build step.
 - Keep the page weight small. This is a browser start page.
 
 ## Rules
@@ -25,7 +30,7 @@ Run `npm test` and `npm run check` before calling a change done. For anything th
 - **No Workers static assets.** Asset requests would skip the Worker and with it the Access check. The stylesheet and scripts are imported as text (see `rules` in `wrangler.jsonc`) and served by routes.
 - **This repository is meant to be public.** Never commit hostnames, account or database ids, email addresses, API keys, real bookmarks or anything else personal. Personal settings go in `wrangler.local.jsonc` and `.dev.vars`, both ignored by git. Examples and tests use `example.com`.
 - **Schema** lives in `worker/schema.ts` and is created by the Worker on first use. Every statement must be idempotent, so a one-click deploy needs no migration. Changing a table means adding a statement that upgrades an existing database.
-- **All SQL is in `worker/db.ts`.** Routes call its functions. Keep the number of queries per request low (the free plan caps them); bulk work goes through `json_each` in one statement, as `importAll` and `reorder` do.
+- **All SQL is in `worker/db.ts`.** Routes call its functions. Keep the number of queries and the CPU time per request low (the free plan caps both); bulk work goes through `json_each` in one statement, as `importAll` and `reorder` do, and large jobs arrive in batches, as the import does.
 - **Duplicates** are decided by `normalizeUrl` in `worker/url.ts`. A change there changes which bookmarks count as the same, and existing `url_norm` values would need recomputing.
 - **Escaping**: pages are JSX, which escapes for you. Do not build HTML from strings and do not use `dangerouslySetInnerHTML`.
 - **State changes are POST** forms or JSON calls. The `csrf()` middleware rejects form posts from other origins.
@@ -39,4 +44,4 @@ Run `npm test` and `npm run check` before calling a change done. For anything th
 - TypeScript, strict. Two space indent, double quotes, semicolons.
 - Comments say why, not what. One short comment at the top of each file.
 - Plain wording in the interface and the docs. No em dashes anywhere, in code, comments, docs or commit messages.
-- New behaviour in `url.ts` or `import.ts` gets a test in `test/`.
+- New behaviour in `url.ts` gets a test in `test/`. Browser scripts in `worker/static/` have no test runner; try them in a browser, the import against a real export.

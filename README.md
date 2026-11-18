@@ -12,7 +12,7 @@ A small, self-hosted bookmark manager for people who move between browsers. One 
 - **No duplicates**: the same page saved twice is one bookmark, whatever the scheme, `www.`, trailing slash or tracking parameters
 - **Strip tracking**: `utm_*`, `fbclid`, `gclid` and friends are removed on save, with a checkbox to keep the address as it is
 - **Tag suggestions**, optional: with an Anthropic API key, new bookmarks get suggested tags that prefer the ones you already use
-- **Import and export**: reads the bookmarks HTML file every browser exports, folders become tags; bookmarks and notes download as JSON
+- **Import and export**: reads the bookmarks HTML file every browser exports, in the browser, folders become tags; bookmarks and notes download as JSON
 - Private, always: only visitors authenticated by [Cloudflare Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) see anything
 - Light and dark mode, works on a phone, can be added to the home screen
 - No framework and no build step: about 12 KB of styles and script; fits in the free tiers of Workers and D1
@@ -69,7 +69,7 @@ Secret, optional: `ANTHROPIC_API_KEY`. Set it with `npm run wrangler secret put 
 | A desktop browser | Drag the bookmarklet from **Settings** to the bookmarks bar. It opens a small window with the page's address and title filled in. |
 | Android | Install the page as an app (browser menu, **Add to Home screen**). It then appears in the share sheet. |
 | iOS | A Shortcut that posts to `/api/add`, see below. |
-| Another browser's bookmarks | **Settings → Import** with the exported HTML file. Should a file with several thousand bookmarks fail on the free plan, split it and import the parts. |
+| Another browser's bookmarks | **Settings → Import** with the exported HTML file. |
 
 ### iOS Shortcut and other scripts
 
@@ -96,9 +96,11 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
                                      └─▶ Anthropic API (optional, tag suggestions)
 ```
 
-**Pages** are rendered on the server with Hono's JSX. One stylesheet and one small script are bundled into the Worker as text and served by it. They are not served through Workers static assets, because Workers with static assets run behind a router that does not pass the Access identity to the Worker, which would defeat the Access check. SortableJS is only loaded when you press Edit on the quick access grid.
+**Pages** are rendered on the server with Hono's JSX. One stylesheet and two small scripts are bundled into the Worker as text and served by it. They are not served through Workers static assets, because Workers with static assets run behind a router that does not pass the Access identity to the Worker, which would defeat the Access check. SortableJS is only loaded when you press Edit on the quick access grid.
 
 **Duplicates** are found by a normalized form of the address (`url_norm`, unique): no scheme, no `www.`, no tracking parameters, no trailing slash, no fragment unless the fragment is a route. Adding an address that is already there opens that bookmark for editing; through the API it updates the bookmark and merges the tags. Either way an archived bookmark comes back. The address that is stored and opened is the one you saved, without tracking parameters unless you untick the box.
+
+**Import**: the Settings page reads the exported file in the browser, which has a real HTML parser and no CPU limit, and sends the links to the Worker 500 at a time. The Worker decides what is a duplicate and which folders become tags, so a large file costs it no more per request than a small one. Running an import twice adds nothing twice.
 
 **Lists** show 200 bookmarks per page, newest first.
 
@@ -108,7 +110,7 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
 
 **Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid), `bookmark_tags`, `icons` and `notes`. Quick access and read later are fields, not tags.
 
-**API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `POST /api/note` with `{ "text": "..." }`, `GET /api/export`.
+**API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `POST /api/note` with `{ "text": "..." }`, `POST /api/import` with `{ "items": [{ "url", "title", "folders", "created" }] }` (at most 500), `GET /api/export`.
 
 ## Develop
 
@@ -127,10 +129,9 @@ worker/views.tsx   pages
 worker/db.ts       every D1 query
 worker/schema.ts   tables, created on first use
 worker/url.ts      address cleaning and the duplicate key
-worker/import.ts   bookmarks HTML parser
 worker/page.ts     reads a page's title and icon
 worker/tagger.ts   tag suggestions
-worker/static/     stylesheet and browser script
+worker/static/     stylesheet, page script, bookmarks import
 test/              vitest
 ```
 

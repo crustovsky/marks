@@ -44,6 +44,14 @@ export function normalizeUrl(u: URL): string {
   return host + path + s.search + hash;
 }
 
+// Top level folders of a bookmarks export that say nothing about the bookmark.
+const PLAIN_FOLDER = /^(bookmarks?( bar| menu| toolbar)?|favou?rites( bar)?|other bookmarks|mobile bookmarks|imported|speed dial|unsorted bookmarks|toolbar|menu)$/i;
+
+// The folders an imported bookmark sat in become its tags: ["Bookmarks bar", "Dev Tools"] -> ["dev-tools"]
+export function folderTags(folders: string[]): string[] {
+  return cleanTags(folders.map((f) => f.trim()).filter((f) => f && !PLAIN_FOLDER.test(f)).map((f) => f.replace(/\s+/g, "-")));
+}
+
 // "Dev, #Linux  energy" -> ["dev", "linux", "energy"]
 export function cleanTags(input: string | string[]): string[] {
   const parts = Array.isArray(input) ? input : input.split(/[\s,]+/);
