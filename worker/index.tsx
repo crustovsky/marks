@@ -9,7 +9,7 @@ import type { Config } from "./config";
 import * as db from "./db";
 import type { Status } from "./db";
 import { parseBookmarks } from "./import";
-import { fetchPage } from "./page";
+import { fetchIcon, fetchPage } from "./page";
 import { ensureSchema } from "./schema";
 import script from "./static/app.js";
 import styles from "./static/app.css";
@@ -23,13 +23,13 @@ type Ctx = Context<App>;
 
 const app = new Hono<App>();
 
-// Private by default: only serve requests that Cloudflare Access authenticated.
+// Private, always: only requests that Cloudflare Access authenticated are served.
+// There is no switch to turn this off, because every visitor can edit and delete.
 app.use(async (c, next) => {
-  const cfg = loadConfig(c.env);
   // Hono types its own ExecutionContext, which does not know about Access yet.
   const ctx = c.executionCtx as unknown as ExecutionContext;
-  if (!ctx.access && !cfg.allowPublic) return accessRequired();
-  c.set("cfg", cfg);
+  if (!ctx.access) return accessRequired();
+  c.set("cfg", loadConfig(c.env));
   await next();
 });
 
@@ -173,6 +173,8 @@ app.post("/save", async (c) => {
     replaceTags: !!v.id,
   });
   if (id === null) return fail("Another bookmark already has this address.");
+  // A pinned bookmark gets its site icon; the tile shows a letter until it is there.
+  if (v.pin) c.executionCtx.waitUntil(loadIcon(c.env.DB, id, false));
   return popup ? page(c, <Closing title={c.var.cfg.title} />) : c.redirect("/", 303);
 });
 
@@ -181,6 +183,37 @@ app.post("/b/:id/status", async (c) => {
   if (status !== "saved" && status !== "later" && status !== "archived") return c.text("bad status", 400);
   await db.setStatus(c.env.DB, Number(c.req.param("id")), status as Status);
   return back(c);
+});
+
+// Fetches the site icon for a bookmark. Without `again`, only when it has none yet.
+async function loadIcon(d1: D1Database, id: number, again: boolean): Promise<void> {
+  const b = await db.byId(d1, id);
+  if (!b || (b.icon && !again)) return;
+  for (const candidate of (await fetchPage(b.url)).icons) {
+    const icon = await fetchIcon(candidate);
+    if (icon) return db.setIcon(d1, id, icon.type, icon.data);
+  }
+}
+
+// The refresh button on a quick access tile.
+app.post("/b/:id/icon", async (c) => {
+  await loadIcon(c.env.DB, Number(c.req.param("id")), true);
+  return back(c);
+});
+
+// Icons come from other sites, so they are served as images and nothing else:
+// an SVG opened directly must not run as a page of this origin.
+app.get("/icon/:id", async (c) => {
+  const icon = await db.getIcon(c.env.DB, Number(c.req.param("id")));
+  if (!icon) return c.notFound();
+  return new Response(icon.data, {
+    headers: {
+      "content-type": icon.type,
+      "cache-control": "private, max-age=31536000, immutable",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      "x-content-type-options": "nosniff",
+    },
+  });
 });
 
 app.post("/b/:id/unpin", async (c) => {
@@ -263,13 +296,12 @@ function accessRequired(): Response {
   const page = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Private</title>
-<style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;line-height:1.5;color:#222}code{background:#eee;padding:.1em .3em;border-radius:3px}.muted{color:#666}</style>
+<style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;line-height:1.5;color:#222}</style>
 </head><body>
 <h1>These bookmarks are private</h1>
 <p>Cloudflare Access is not protecting this address yet, so nothing is shown.</p>
 <h2>If you deployed this Worker, turn Access on</h2>
 <p>Workers &amp; Pages → <em>this Worker</em> → <strong>Access</strong> tab → <strong>Protect this Worker behind Access</strong> → <strong>All traffic</strong> (the default, Previews only, is not enough), choose who may sign in, then <strong>Apply Access</strong>.</p>
-<p class="muted">To serve the bookmarks without Access on purpose, set the <code>ALLOW_PUBLIC</code> variable to <code>true</code>.</p>
 </body></html>`;
   return new Response(page, { status: 403, headers: { "content-type": "text/html; charset=utf-8" } });
 }

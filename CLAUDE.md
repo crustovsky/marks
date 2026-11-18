@@ -21,7 +21,7 @@ Run `npm test` and `npm run check` before calling a change done. For anything th
 
 ## Rules
 
-- **Private by default.** The first middleware in `worker/index.tsx` rejects every request that Cloudflare Access did not authenticate, unless `ALLOW_PUBLIC` is `true`. Nothing may be served before it, and no route may bypass it.
+- **Private, always.** The first middleware in `worker/index.tsx` rejects every request that Cloudflare Access did not authenticate. There is deliberately no option to turn this off: every visitor can edit and delete. Nothing may be served before it, and no route may bypass it.
 - **No Workers static assets.** Asset requests would skip the Worker and with it the Access check. The stylesheet and scripts are imported as text (see `rules` in `wrangler.jsonc`) and served by routes.
 - **This repository is meant to be public.** Never commit hostnames, account or database ids, email addresses, API keys, real bookmarks or anything else personal. Personal settings go in `wrangler.local.jsonc` and `.dev.vars`, both ignored by git. Examples and tests use `example.com`.
 - **Schema** lives in `worker/schema.ts` and is created by the Worker on first use. Every statement must be idempotent, so a one-click deploy needs no migration. Changing a table means adding a statement that upgrades an existing database.
@@ -29,6 +29,7 @@ Run `npm test` and `npm run check` before calling a change done. For anything th
 - **Duplicates** are decided by `normalizeUrl` in `worker/url.ts`. A change there changes which bookmarks count as the same, and existing `url_norm` values would need recomputing.
 - **Escaping**: pages are JSX, which escapes for you. Do not build HTML from strings and do not use `dangerouslySetInnerHTML`.
 - **State changes are POST** forms or JSON calls. The `csrf()` middleware rejects form posts from other origins.
+- **Content from other sites** (titles, icons) is untrusted. Titles go through JSX; icons are served with a sandboxing CSP and only ever used in `<img>`.
 - **The tagger is optional.** Every path must work with `ANTHROPIC_API_KEY` unset, and a failed API call must never fail a save.
 
 ## Style

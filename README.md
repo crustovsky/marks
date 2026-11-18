@@ -4,7 +4,7 @@ A small, self-hosted bookmark manager for people who move between browsers. One 
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/crustovsky/marks)
 
-- **Quick access**: a grid of pinned sites, reordered by drag and drop
+- **Quick access**: a grid of pinned sites with their icons, reordered by drag and drop
 - **Bookmarks**: tags instead of folders, search over title, address, note and tags
 - **Read later**: a queue with Done and Keep, separate from the bookmarks you keep
 - **Easy to add**: paste an address into the search box, use the bookmarklet, share to it on Android, or post to the API from an iOS Shortcut
@@ -12,7 +12,7 @@ A small, self-hosted bookmark manager for people who move between browsers. One 
 - **Strip tracking**: `utm_*`, `fbclid`, `gclid` and friends are removed on save, with a checkbox to keep the address as it is
 - **Tag suggestions**, optional: with an Anthropic API key, new bookmarks get suggested tags that prefer the ones you already use
 - **Import and export**: reads the bookmarks HTML file every browser exports, folders become tags; everything downloads as JSON
-- Private by default: only visitors authenticated by [Cloudflare Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) see anything
+- Private, always: only visitors authenticated by [Cloudflare Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) see anything
 - Light and dark mode, works on a phone, installs as an app
 - Under 20 KB of markup, styles and script per page; fits in the free tiers of Workers and D1
 
@@ -41,6 +41,8 @@ The tables are created by the Worker on its first request, so there is no migrat
 
 ## Turn on Cloudflare Access
 
+There is no setting that makes the bookmarks public. Everyone who gets in can add, edit and delete, so the Worker serves nothing at all until Access protects it.
+
 1. In the Cloudflare dashboard open **Workers & Pages** and select the Worker.
 2. Open the **Access** tab and select **Protect this Worker behind Access**.
 3. Choose **All traffic**. The default, Previews only, is not enough.
@@ -53,11 +55,10 @@ Set a long session duration on the Access application (a month, say), so each br
 
 | Variable       | Default            | Meaning |
 | -------------- | ------------------ | ------- |
-| `ALLOW_PUBLIC` | `false`            | `true` serves visitors without Cloudflare Access. Anyone who finds the address can then read and change everything, so only use it behind some other gate. |
 | `SITE_TITLE`   | `marks`            | Name in the top bar and on the home screen icon. |
 | `TAG_MODEL`    | `claude-haiku-5-5` | Claude model used for tag suggestions. |
 
-Secret, optional: `ANTHROPIC_API_KEY`. Set it with `npm run wrangler secret put ANTHROPIC_API_KEY` or in the dashboard to turn tag suggestions on. The Worker then sends the address, title and description of a new bookmark, plus your list of tag names, to the Anthropic API. Without the key nothing leaves the Worker except the request that reads a page's title.
+Secret, optional: `ANTHROPIC_API_KEY`. Set it with `npm run wrangler secret put ANTHROPIC_API_KEY` or in the dashboard to turn tag suggestions on. The Worker then sends the address, title and description of a new bookmark, plus your list of tag names, to the Anthropic API. Without the key nothing leaves the Worker except the requests that read a page's title and icon.
 
 ## Adding bookmarks
 
@@ -94,11 +95,13 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
                                      └─▶ Anthropic API (optional, tag suggestions)
 ```
 
-**Pages** are rendered on the server with Hono's JSX. One stylesheet and one small script are bundled into the Worker as text and served by it. They are not served through Workers static assets, because Workers with static assets run behind a router that does not pass the Access identity to the Worker, which would defeat the private-by-default check. SortableJS is only loaded when you press Edit on the quick access grid.
+**Pages** are rendered on the server with Hono's JSX. One stylesheet and one small script are bundled into the Worker as text and served by it. They are not served through Workers static assets, because Workers with static assets run behind a router that does not pass the Access identity to the Worker, which would defeat the Access check. SortableJS is only loaded when you press Edit on the quick access grid.
 
 **Duplicates** are found by a normalized form of the address (`url_norm`, unique): no scheme, no `www.`, no tracking parameters, no trailing slash, no fragment unless the fragment is a route. Saving an address that is already there updates that bookmark and merges the tags. The address that is stored and opened is the one you saved, without tracking parameters unless you untick the box.
 
-**Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid) and `bookmark_tags`. Quick access and read later are fields, not tags.
+**Icons**: a pinned bookmark gets its site icon, read from the page (`apple-touch-icon`, then `rel="icon"`, then `/favicon.ico`) and kept in D1. Until it arrives, and for sites without one, the tile shows a coloured letter. In Edit mode each tile has a button that fetches the icon again.
+
+**Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid) `bookmark_tags` and `icons`. Quick access and read later are fields, not tags.
 
 **API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `GET /api/export`.
 
@@ -120,7 +123,7 @@ worker/db.ts       every D1 query
 worker/schema.ts   tables, created on first use
 worker/url.ts      address cleaning and the duplicate key
 worker/import.ts   bookmarks HTML parser
-worker/page.ts     reads a page's title
+worker/page.ts     reads a page's title and icon
 worker/tagger.ts   tag suggestions
 worker/static/     stylesheet and browser script
 test/              vitest

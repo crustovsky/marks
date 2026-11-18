@@ -175,11 +175,18 @@ export const Home: FC<{ nav: Nav; pinned: Bookmark[]; later: Bookmark[]; recent:
           {pinned.map((b) => (
             <div class="tile" data-id={b.id}>
               <a href={b.url} rel="noreferrer">
-                <span class="letter" style={`background:hsl(${hue(host(b.url))} 45% 36%)`}>
-                  {(b.title || host(b.url)).trim()[0]?.toUpperCase()}
-                </span>
+                {b.icon ? (
+                  <img class="letter" src={`/icon/${b.id}?v=${b.icon}`} alt="" />
+                ) : (
+                  <span class="letter" style={`background:hsl(${hue(host(b.url))} 45% 36%)`}>
+                    {(b.title || host(b.url)).trim()[0]?.toUpperCase()}
+                  </span>
+                )}
                 <span class="name">{b.title || host(b.url)}</span>
               </a>
+              <form method="post" action={`/b/${b.id}/icon`} class="refresh">
+                <button aria-label={`Fetch the icon of ${b.title} again`}>↻</button>
+              </form>
               <form method="post" action={`/b/${b.id}/unpin`}>
                 <button aria-label={`Remove ${b.title} from quick access`}>×</button>
               </form>

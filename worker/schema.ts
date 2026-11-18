@@ -20,6 +20,13 @@ const SCHEMA = [
     auto INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (bookmark_id, tag)
   )`,
+  // Site icons for the quick access tiles, fetched when a bookmark is pinned.
+  `CREATE TABLE IF NOT EXISTS icons (
+    bookmark_id INTEGER PRIMARY KEY,
+    type TEXT NOT NULL,
+    data BLOB NOT NULL,
+    fetched_at INTEGER NOT NULL
+  )`,
   `CREATE INDEX IF NOT EXISTS bookmarks_status ON bookmarks (status, created_at)`,
   `CREATE INDEX IF NOT EXISTS bookmark_tags_tag ON bookmark_tags (tag)`,
 ];

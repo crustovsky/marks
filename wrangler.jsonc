@@ -27,7 +27,6 @@
     }
   ],
   "vars": {
-    "ALLOW_PUBLIC": "false",
     "SITE_TITLE": "marks",
     "TAG_MODEL": "claude-haiku-5-5"
   },

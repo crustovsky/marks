@@ -24,9 +24,6 @@
       "DB": {
         "description": "D1 database that stores the bookmarks and their tags. Created automatically."
       },
-      "ALLOW_PUBLIC": {
-        "description": "Leave as `false`. The Worker only serves visitors authenticated by **Cloudflare Access**; enable Access on the Worker after deploying. `true` lets anyone who finds the address read and change your bookmarks."
-      },
       "SITE_TITLE": {
         "description": "Name shown in the top bar and on the home screen icon."
       },

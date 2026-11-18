@@ -14,12 +14,16 @@ export interface Bookmark {
   pinned_pos: number | null;
   created_at: number;
   updated_at: number;
+  icon: number | null; // when the site icon was fetched, null without one
   tags: string[];
 }
 
 type Row = Omit<Bookmark, "tags"> & { tags: string | null };
 
-const SELECT = `SELECT b.*, (SELECT group_concat(tag, ' ') FROM bookmark_tags t WHERE t.bookmark_id = b.id) AS tags FROM bookmarks b`;
+const SELECT = `SELECT b.*,
+  (SELECT group_concat(tag, ' ') FROM bookmark_tags t WHERE t.bookmark_id = b.id) AS tags,
+  (SELECT fetched_at FROM icons i WHERE i.bookmark_id = b.id) AS icon
+  FROM bookmarks b`;
 
 const toBookmark = (r: Row): Bookmark => ({ ...r, tags: r.tags ? r.tags.split(" ").sort() : [] });
 
@@ -173,6 +177,7 @@ export async function unpin(db: D1Database, id: number): Promise<void> {
 export async function remove(db: D1Database, id: number): Promise<void> {
   await db.batch([
     db.prepare("DELETE FROM bookmark_tags WHERE bookmark_id = ?").bind(id),
+    db.prepare("DELETE FROM icons WHERE bookmark_id = ?").bind(id),
     db.prepare("DELETE FROM bookmarks WHERE id = ?").bind(id),
   ]);
 }
@@ -186,6 +191,18 @@ export async function reorder(db: D1Database, ids: number[]): Promise<void> {
     )
     .bind(JSON.stringify(ids))
     .run();
+}
+
+export async function setIcon(db: D1Database, id: number, type: string, data: ArrayBuffer): Promise<void> {
+  await db
+    .prepare("INSERT OR REPLACE INTO icons (bookmark_id, type, data, fetched_at) VALUES (?, ?, ?, ?)")
+    .bind(id, type, data, now())
+    .run();
+}
+
+export async function getIcon(db: D1Database, id: number): Promise<{ type: string; data: Uint8Array } | null> {
+  const row = await db.prepare("SELECT type, data FROM icons WHERE bookmark_id = ?").bind(id).first<{ type: string; data: ArrayLike<number> }>();
+  return row ? { type: row.type, data: new Uint8Array(row.data) } : null;
 }
 
 export interface ImportItem {
