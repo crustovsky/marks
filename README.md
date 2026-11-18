@@ -1,6 +1,6 @@
 # marks
 
-A small, self-hosted bookmark manager for people who move between browsers. One Cloudflare Worker keeps your bookmarks in a D1 database and serves a start page with a quick access grid, a tagged bookmark list and a read later queue. It replaces the bookmarks bar and speed dial of each browser with one page that is the same everywhere.
+A small, self-hosted bookmark manager for people who move between browsers. One Cloudflare Worker keeps your bookmarks in a D1 database and serves a start page with a quick access grid, a tagged bookmark list, a read later queue and quick notes. It replaces the bookmarks bar and speed dial of each browser with one page that is the same everywhere.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/crustovsky/marks)
 
@@ -14,8 +14,8 @@ A small, self-hosted bookmark manager for people who move between browsers. One 
 - **Tag suggestions**, optional: with an Anthropic API key, new bookmarks get suggested tags that prefer the ones you already use
 - **Import and export**: reads the bookmarks HTML file every browser exports, folders become tags; bookmarks and notes download as JSON
 - Private, always: only visitors authenticated by [Cloudflare Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) see anything
-- Light and dark mode, works on a phone, installs as an app
-- Under 20 KB of markup, styles and script per page; fits in the free tiers of Workers and D1
+- Light and dark mode, works on a phone, can be added to the home screen
+- No framework and no build step: about 12 KB of styles and script; fits in the free tiers of Workers and D1
 
 ## Deploy
 
@@ -69,7 +69,7 @@ Secret, optional: `ANTHROPIC_API_KEY`. Set it with `npm run wrangler secret put 
 | A desktop browser | Drag the bookmarklet from **Settings** to the bookmarks bar. It opens a small window with the page's address and title filled in. |
 | Android | Install the page as an app (browser menu, **Add to Home screen**). It then appears in the share sheet. |
 | iOS | A Shortcut that posts to `/api/add`, see below. |
-| Another browser's bookmarks | **Settings → Import** with the exported HTML file. |
+| Another browser's bookmarks | **Settings → Import** with the exported HTML file. Should a file with several thousand bookmarks fail on the free plan, split it and import the parts. |
 
 ### iOS Shortcut and other scripts
 
@@ -98,11 +98,15 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
 
 **Pages** are rendered on the server with Hono's JSX. One stylesheet and one small script are bundled into the Worker as text and served by it. They are not served through Workers static assets, because Workers with static assets run behind a router that does not pass the Access identity to the Worker, which would defeat the Access check. SortableJS is only loaded when you press Edit on the quick access grid.
 
-**Duplicates** are found by a normalized form of the address (`url_norm`, unique): no scheme, no `www.`, no tracking parameters, no trailing slash, no fragment unless the fragment is a route. Saving an address that is already there updates that bookmark and merges the tags. The address that is stored and opened is the one you saved, without tracking parameters unless you untick the box.
+**Duplicates** are found by a normalized form of the address (`url_norm`, unique): no scheme, no `www.`, no tracking parameters, no trailing slash, no fragment unless the fragment is a route. Adding an address that is already there opens that bookmark for editing; through the API it updates the bookmark and merges the tags. Either way an archived bookmark comes back. The address that is stored and opened is the one you saved, without tracking parameters unless you untick the box.
+
+**Lists** show 200 bookmarks per page, newest first.
+
+**Headers**: every page carries a content security policy that allows scripts, styles and images from the Worker itself only, forbids framing and limits forms to the same origin.
 
 **Icons**: a pinned bookmark gets its site icon, read from the page (`apple-touch-icon`, then `rel="icon"`, then `/favicon.ico`) and kept in D1. Until it arrives, and for sites without one, the tile shows a coloured letter. In Edit mode each tile has a button that fetches the icon again.
 
-**Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid) `bookmark_tags`, `icons` and `notes`. Quick access and read later are fields, not tags.
+**Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid), `bookmark_tags`, `icons` and `notes`. Quick access and read later are fields, not tags.
 
 **API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `POST /api/note` with `{ "text": "..." }`, `GET /api/export`.
 

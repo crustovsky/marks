@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseBookmarks } from "../worker/import";
+import { decode } from "../worker/page";
 import { cleanTags, cleanUrl, looksLikeUrl, normalizeUrl, parseUrl } from "../worker/url";
 
 const norm = (s: string) => normalizeUrl(parseUrl(s)!);
@@ -44,6 +45,12 @@ describe("parseUrl and looksLikeUrl", () => {
 describe("cleanTags", () => {
   it("lowercases, splits and removes duplicates", () => {
     expect(cleanTags("Dev, #Linux  dev Żółw")).toEqual(["dev", "linux", "żółw"]);
+  });
+});
+
+describe("decode", () => {
+  it("turns HTML entities into text", () => {
+    expect(decode("Tom &amp; Jerry &#8211; caf&#xe9; &quot;x&quot; &unknown;")).toBe('Tom & Jerry \u2013 caf\u00e9 "x" &unknown;');
   });
 });
 

@@ -34,6 +34,7 @@ export interface Filter {
   tag?: string;
   q?: string;
   limit?: number;
+  offset?: number;
 }
 
 export async function list(db: D1Database, f: Filter = {}): Promise<Bookmark[]> {
@@ -56,8 +57,8 @@ export async function list(db: D1Database, f: Filter = {}): Promise<Bookmark[]> 
     );
     args.push(like, like, like, like);
   }
-  const sql = `${SELECT} WHERE ${where.join(" AND ")} ORDER BY b.created_at DESC, b.id DESC LIMIT ?`;
-  const { results } = await db.prepare(sql).bind(...args, f.limit ?? 500).all<Row>();
+  const sql = `${SELECT} WHERE ${where.join(" AND ")} ORDER BY b.created_at DESC, b.id DESC LIMIT ? OFFSET ?`;
+  const { results } = await db.prepare(sql).bind(...args, f.limit ?? 200, f.offset ?? 0).all<Row>();
   return results.map(toBookmark);
 }
 
@@ -129,7 +130,8 @@ export async function save(db: D1Database, s: SaveInput): Promise<number | null>
       .run();
     id = s.id;
   } else {
-    // Empty title and note keep what is stored; a missing status keeps the stored one.
+    // Empty title and note keep what is stored. A missing status keeps the stored
+    // one too, except that saving an archived bookmark again brings it back.
     const row = await db
       .prepare(
         `INSERT INTO bookmarks (url, url_norm, title, note, status, created_at, updated_at)
@@ -137,7 +139,7 @@ export async function save(db: D1Database, s: SaveInput): Promise<number | null>
          ON CONFLICT(url_norm) DO UPDATE SET
            title = CASE WHEN excluded.title != '' THEN excluded.title ELSE title END,
            note = CASE WHEN excluded.note != '' THEN excluded.note ELSE note END,
-           status = coalesce(?5, status),
+           status = coalesce(?5, CASE WHEN status = 'archived' THEN 'saved' ELSE status END),
            updated_at = ?6
          RETURNING id`,
       )
@@ -245,7 +247,7 @@ export interface ImportItem {
   created: number; // unix seconds, 0 when unknown
 }
 
-// Two statements however many bookmarks: existing ones keep their fields and gain the tags.
+// Two statements per 500 bookmarks: existing ones keep their fields and gain the tags.
 export async function importAll(db: D1Database, items: ImportItem[]): Promise<{ added: number; total: number }> {
   const byNorm = new Map<string, { u: string; n: string; t: string; c: number; g: string[] }>();
   for (const it of items) {
@@ -257,8 +259,12 @@ export async function importAll(db: D1Database, items: ImportItem[]): Promise<{ 
     else byNorm.set(n, { u: cleanUrl(u, true), n, t: it.title, c: it.created || now(), g: it.tags });
   }
   const rows = [...byNorm.values()];
-  if (!rows.length) return { added: 0, total: 0 };
-  const json = JSON.stringify(rows);
+  let added = 0;
+  for (let i = 0; i < rows.length; i += 500) added += await importChunk(db, JSON.stringify(rows.slice(i, i + 500)));
+  return { added, total: rows.length };
+}
+
+async function importChunk(db: D1Database, json: string): Promise<number> {
   const [ins] = await db.batch([
     db
       .prepare(
@@ -279,7 +285,7 @@ export async function importAll(db: D1Database, items: ImportItem[]): Promise<{ 
       )
       .bind(json),
   ]);
-  return { added: ins.meta.changes ?? 0, total: rows.length };
+  return ins.meta.changes ?? 0;
 }
 
 export async function exportAll(db: D1Database): Promise<Bookmark[]> {

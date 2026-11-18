@@ -33,7 +33,10 @@
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ids: [...grid.children].map((el) => Number(el.dataset.id)) }),
-      });
+      })
+        .then((r) => r.ok || Promise.reject())
+        // Most likely the Access session ran out; a reload leads to the sign-in.
+        .catch(() => location.reload());
     edit.addEventListener("click", async () => {
       const on = document.body.classList.toggle("editing");
       edit.textContent = on ? "Done" : "Edit";

@@ -32,10 +32,10 @@ const Head: FC<{ title: string }> = ({ title }) => (
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0f1114" />
-    <meta name="referrer" content="no-referrer" />
+    <meta name="referrer" content="same-origin" />
     <title>{title}</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <script src="/app.js" defer></script>
   </head>
@@ -162,7 +162,7 @@ const Rows: FC<{ items: Bookmark[]; empty: string }> = ({ items, empty }) =>
 // Note text with its addresses turned into links.
 const Linked: FC<{ text: string }> = ({ text }) => (
   <span class="text">
-    {text.split(/(https?:\/\/\S+)/).map((part, i) =>
+    {text.split(/(https?:\/\/[^\s<]*[^\s<.,;:!?)\]'"])/).map((part, i) =>
       i % 2 ? (
         <a href={part} rel="noreferrer">
           {part}
@@ -266,17 +266,36 @@ export const Home: FC<{ nav: Nav; pinned: Bookmark[]; notes: Note[]; later: Book
   </Layout>
 );
 
-export const List: FC<{ nav: Nav; active: string; heading: string; items: Bookmark[]; notes: Note[]; q?: string; tag?: string }> = (p) => (
+export const List: FC<{ nav: Nav; active: string; heading: string; items: Bookmark[]; notes: Note[]; q?: string; tag?: string; newer?: string; older?: string }> = (p) => (
   <Layout nav={p.nav} active={p.active} q={p.q}>
     <section>
       <div class="head">
         <h2>{p.heading}</h2>
-        <span class="n">{p.items.length}</span>
+        <span class="n">
+          {p.items.length}
+          {(p.newer || p.older) && " on this page"}
+        </span>
       </div>
       <div class="strip">
         <TagCloud tags={p.nav.tags} current={p.tag} />
       </div>
       <Rows items={p.items} empty="Nothing here." />
+      {(p.newer || p.older) && (
+        <div class="pager">
+          {p.newer ? (
+            <a class="btn" href={p.newer}>
+              Newer
+            </a>
+          ) : (
+            <span></span>
+          )}
+          {p.older && (
+            <a class="btn" href={p.older}>
+              Older
+            </a>
+          )}
+        </div>
+      )}
     </section>
     {p.notes.length > 0 && (
       <section>

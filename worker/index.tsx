@@ -36,6 +36,15 @@ app.use(async (c, next) => {
 // Forms only post from this origin.
 app.use(csrf());
 
+// Pages load scripts, styles and images from this origin only, post only to it
+// and cannot be framed. The icon route sets a stricter policy of its own.
+const CSP = "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+app.use(async (c, next) => {
+  await next();
+  if (!c.res.headers.has("content-security-policy")) c.res.headers.set("content-security-policy", CSP);
+  c.res.headers.set("x-content-type-options", "nosniff");
+});
+
 // The stylesheet and scripts live in the Worker bundle, see wrangler.jsonc.
 const asset = (body: string, type: string) => () =>
   new Response(body, { headers: { "content-type": `${type}; charset=utf-8`, "cache-control": "private, max-age=600" } });
@@ -102,13 +111,25 @@ app.get("/go", (c) => {
   return c.redirect(looksLikeUrl(q) ? `/add?url=${encodeURIComponent(q)}` : `/list?q=${encodeURIComponent(q)}`);
 });
 
+const PAGE = 200; // bookmarks per list page
+
 app.get("/list", async (c) => {
   const { view, tag, q } = c.req.query();
   const status = view === "later" || view === "archived" ? view : undefined;
   const archive = status === "archived" && !tag && !q;
-  const [n, items, notes] = await Promise.all([nav(c), db.list(c.env.DB, { status, tag, q }), archive ? db.notes(c.env.DB, true) : []]);
+  // One row more than a page holds tells whether there is an older page.
+  const pageNo = Math.max(1, Number(c.req.query("page")) || 1);
+  const [n, rows, notes] = await Promise.all([
+    nav(c),
+    db.list(c.env.DB, { status, tag, q, limit: PAGE + 1, offset: (pageNo - 1) * PAGE }),
+    archive && pageNo === 1 ? db.notes(c.env.DB, true) : [],
+  ]);
+  const items = rows.slice(0, PAGE);
+  const link = (p: number) => `/list?${new URLSearchParams({ ...c.req.query(), page: String(p) })}`;
+  const newer = pageNo > 1 ? link(pageNo - 1) : undefined;
+  const older = rows.length > PAGE ? link(pageNo + 1) : undefined;
   const heading = q ? `Search: ${q}` : tag ? `Tag: ${tag}` : status === "later" ? "Read later" : status === "archived" ? "Archive" : "All bookmarks";
-  return page(c, <List nav={n} active={q || tag ? "" : (status ?? "all")} heading={heading} items={items} notes={notes} q={q} tag={tag} />);
+  return page(c, <List nav={n} active={q || tag ? "" : (status ?? "all")} heading={heading} items={items} notes={notes} q={q} tag={tag} newer={newer} older={older} />);
 });
 
 app.get("/tags", async (c) => page(c, <Tags nav={await nav(c)} />));
@@ -121,7 +142,7 @@ const fromBookmark = (b: db.Bookmark): FormValues => ({
   tags: b.tags,
   pin: b.pinned_pos !== null,
   later: b.status === "later",
-  strip: true,
+  strip: false, // it was cleaned, or deliberately not, when it was first saved
 });
 
 // Opened by the search box, the bookmarklet (popup=1) and the Android share sheet.
@@ -167,6 +188,8 @@ app.post("/save", async (c) => {
     strip: v.strip,
     title: v.title,
     note: v.note,
+    // An edit sets the status; a second save of a known address keeps it,
+    // except that an archived bookmark comes back (see db.save).
     status: v.later ? "later" : v.id ? "saved" : undefined,
     // Without an id this is a new bookmark, or a second save of one that is
     // already there: then tags are merged and an unticked box unpins nothing.

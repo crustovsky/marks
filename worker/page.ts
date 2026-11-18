@@ -23,8 +23,9 @@ export async function fetchPage(url: string): Promise<PageInfo> {
     });
     if (!res.ok || !(res.headers.get("content-type") ?? "").includes("html")) return info;
     let og = "";
+    let titles = 0; // inline SVGs have <title> elements too; only the first one is the page's
     const rewritten = new HTMLRewriter()
-      .on("title", { text: (t) => void (info.title += t.text) })
+      .on("title", { element: () => void titles++, text: (t) => void (titles === 1 && (info.title += t.text)) })
       .on('meta[property="og:title"]', { element: (e) => void (og = e.getAttribute("content") ?? "") })
       .on('meta[name="description"]', { element: (e) => void (info.description = e.getAttribute("content") ?? "") })
       .on('link[rel="apple-touch-icon"]', href(touch))
