@@ -1,0 +1,51 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "marks",
+  "main": "worker/index.tsx",
+  "compatibility_date": "2026-11-13",
+  "workers_dev": true,
+  "preview_urls": false,
+  // Stylesheet and browser scripts are bundled into the Worker as text. Workers
+  // with static assets run behind a router that does not pass the Access
+  // identity to the Worker, which would defeat the private-by-default check.
+  "rules": [
+    {
+      "type": "Text",
+      "globs": [
+        "**/*.css",
+        "**/static/*.js",
+        "**/*.min.js"
+      ],
+      "fallthrough": false
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "marks",
+      "database_id": "marks"
+    }
+  ],
+  "vars": {
+    "ALLOW_PUBLIC": "false",
+    "SITE_TITLE": "marks",
+    "TAG_MODEL": "claude-haiku-5-5"
+  },
+  // Optional secret, set with `wrangler secret put`: ANTHROPIC_API_KEY (turns on tag suggestions).
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    }
+  },
+  // Simulates a signed-in Cloudflare Access user for `wrangler dev`.
+  "access": {
+    "dev": {
+      "aud": "local-dev",
+      "identity": {
+        "email": "dev@example.com"
+      }
+    }
+  }
+}

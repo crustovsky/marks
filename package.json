@@ -1,0 +1,41 @@
+{
+  "name": "marks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/wrangler.mjs dev",
+    "deploy": "node scripts/wrangler.mjs deploy",
+    "wrangler": "node scripts/wrangler.mjs",
+    "types": "node scripts/wrangler.mjs types",
+    "check": "npm run types && tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "hono": "^4.13.19",
+    "sortablejs": "^1.15.7"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1",
+    "wrangler": "^4.164.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "DB": {
+        "description": "D1 database that stores the bookmarks and their tags. Created automatically."
+      },
+      "ALLOW_PUBLIC": {
+        "description": "Leave as `false`. The Worker only serves visitors authenticated by **Cloudflare Access**; enable Access on the Worker after deploying. `true` lets anyone who finds the address read and change your bookmarks."
+      },
+      "SITE_TITLE": {
+        "description": "Name shown in the top bar and on the home screen icon."
+      },
+      "TAG_MODEL": {
+        "description": "Claude model used for tag suggestions. Only used when the `ANTHROPIC_API_KEY` secret is set."
+      },
+      "ANTHROPIC_API_KEY": {
+        "description": "Optional. An Anthropic API key turns on tag suggestions for new bookmarks. Leave empty to keep them off."
+      }
+    }
+  }
+}
