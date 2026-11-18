@@ -282,13 +282,13 @@ app.get("/add", async (c) => {
     ? fromBookmark(existing)
     : { url: url?.href ?? raw, title: q.title ?? "", note: "", tags: [], pin: false, later: false, strip: true };
   const message = existing ? "Already saved. Saving again updates it." : undefined;
-  return page(c, <Form nav={await nav(c)} v={v} popup={q.popup === "1"} suggest={!!c.var.cfg.apiKey && !existing && !!url} message={message} />);
+  return page(c, <Form nav={await nav(c)} v={v} popup={q.popup === "1"} suggest={!!c.var.cfg.apiKey && !existing && !!url} tagger={!!c.var.cfg.apiKey} message={message} />);
 });
 
 app.get("/edit/:id", async (c) => {
   const b = await db.byId(c.env.DB, Number(c.req.param("id")));
   if (!b) return c.notFound();
-  return page(c, <Form nav={await nav(c)} v={fromBookmark(b)} popup={false} suggest={false} />);
+  return page(c, <Form nav={await nav(c)} v={fromBookmark(b)} popup={false} suggest={false} tagger={!!c.var.cfg.apiKey} />);
 });
 
 app.post("/save", async (c) => {
@@ -304,7 +304,7 @@ app.post("/save", async (c) => {
     later: f.later === "on",
     strip: f.strip === "on",
   };
-  const fail = async (message: string) => page(c, <Form nav={await nav(c)} v={v} popup={popup} suggest={false} message={message} />, 400);
+  const fail = async (message: string) => page(c, <Form nav={await nav(c)} v={v} popup={popup} suggest={false} tagger={!!c.var.cfg.apiKey} message={message} />, 400);
 
   const url = parseUrl(v.url);
   if (!url) return fail("That does not look like a web address.");

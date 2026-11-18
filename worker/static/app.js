@@ -59,11 +59,15 @@
     count();
   }
 
-  // Quick access: Edit turns the tiles into something to drag and remove.
+  // Quick access: tiles can be dragged into a new order with the mouse at any
+  // time. Edit adds the buttons to remove a tile or fetch its icon again, and is
+  // how a finger drags, where a long press on a link belongs to the browser.
   const grid = $("#quick");
   const edit = $("#quick-edit");
   if (grid && edit) {
+    const editing = () => document.body.classList.contains("editing");
     let sortable;
+    let loading;
     const saveOrder = () =>
       fetch("/api/reorder", {
         method: "POST",
@@ -73,18 +77,22 @@
         .then((r) => r.ok || Promise.reject())
         // Most likely the Access session ran out; a reload leads to the sign-in.
         .catch(() => location.reload());
+    // The drag library is loaded when the mouse first reaches the tiles, or on Edit.
+    const arm = () =>
+      (loading ??= loadScript("/sortable.js").then(() => {
+        sortable = new Sortable(grid, { animation: 150, onEnd: saveOrder });
+      }));
+    grid.addEventListener("pointerenter", (e) => e.pointerType === "mouse" && arm());
+    // Decided on every press, before the library sees it: a mouse always drags, anything else only while editing.
+    grid.addEventListener("pointerdown", (e) => sortable?.option("disabled", e.pointerType !== "mouse" && !editing()), true);
     edit.addEventListener("click", async () => {
       const on = document.body.classList.toggle("editing");
       edit.textContent = on ? "Done" : "Edit";
-      if (on && !sortable) {
-        await loadScript("/sortable.js");
-        sortable = new Sortable(grid, { animation: 150, onEnd: saveOrder });
-      }
-      sortable?.option("disabled", !on);
+      if (on) await arm();
     });
     // While editing, a tap on a tile must not open it.
     grid.addEventListener("click", (e) => {
-      if (document.body.classList.contains("editing") && !e.target.closest("button")) e.preventDefault();
+      if (editing() && !e.target.closest("button")) e.preventDefault();
     });
   }
 
@@ -107,11 +115,54 @@
     tags.addEventListener("input", paint);
     paint();
 
+    // "+" turns into a small field for a tag that is not among the buttons yet.
+    // Enter or leaving the field adds it, Escape gives up.
+    const plus = $("#new-tag");
+    if (plus) {
+      plus.hidden = false;
+      plus.addEventListener("click", () => {
+        const box = Object.assign(document.createElement("input"), { type: "text", className: "tag new", placeholder: "new tag", autocapitalize: "off" });
+        box.setAttribute("aria-label", "New tag");
+        let open = true;
+        const close = (keep) => {
+          if (!open) return;
+          open = false;
+          // The same cleaning as the server, which cleans again on save.
+          const tag = keep ? box.value.toLowerCase().replace(/[^\p{L}\p{N}_-]/gu, "").slice(0, 32) : "";
+          box.remove();
+          plus.hidden = false;
+          if (!tag) return;
+          if (![...pick.children].some((b) => b.dataset.tag === tag)) {
+            const button = Object.assign(document.createElement("button"), { type: "button", className: "tag", textContent: tag });
+            button.dataset.tag = tag;
+            plus.before(button);
+          }
+          if (!current().includes(tag)) tags.value = [...current(), tag].join(" ");
+          paint();
+        };
+        box.addEventListener("keydown", (e) => {
+          // Enter must not save the whole form.
+          if (e.key === "Enter") e.preventDefault();
+          if (e.key === "Enter" || e.key === "Escape") {
+            close(e.key === "Enter");
+            plus.focus();
+          }
+        });
+        box.addEventListener("blur", () => close(true));
+        plus.hidden = true;
+        plus.before(box);
+        box.focus();
+      });
+    }
+
     // Suggested tags come first, outlined, and are not applied until tapped.
-    if (tags.dataset.suggest) {
+    // A new bookmark asks for them when the form opens, an existing one when
+    // its button is pressed, for the address and title as they stand in the form.
+    const ask = $("#suggest");
+    const suggest = () => {
       const form = tags.form;
       const query = new URLSearchParams({ url: form.url.value, title: form.title.value });
-      fetch(`/api/suggest?${query}`)
+      return fetch(`/api/suggest?${query}`)
         .then((r) => r.json())
         .then(({ tags: suggested }) => {
           for (const tag of suggested.reverse()) {
@@ -122,8 +173,19 @@
             pick.prepend(button);
           }
           paint();
+          return suggested.length;
         })
-        .catch(() => {});
+        .catch(() => 0);
+    };
+    if (tags.dataset.suggest) suggest();
+    if (ask) {
+      ask.hidden = false;
+      ask.addEventListener("click", async () => {
+        ask.disabled = true;
+        ask.textContent = "Asking";
+        ask.textContent = (await suggest()) ? "Suggest tags" : "No suggestions";
+        ask.disabled = false;
+      });
     }
   }
 

@@ -92,6 +92,7 @@ img.letter { object-fit: contain; }
 .tile form.refresh { right: auto; left: -6px; }
 .tile form button { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line2); background: var(--bg); line-height: 1; }
 .editing .tile { cursor: grab; -webkit-touch-callout: none; user-select: none; }
+@media (hover: hover) { .tile a { -webkit-user-drag: none; } }
 .editing .tile a { border-style: dashed; }
 .editing .tile form { display: block; }
 
@@ -138,6 +139,8 @@ input[type="file"]::file-selector-button { min-height: 44px; margin-right: 12px;
 .form input:focus, .whole input:focus, .bulk input:focus { outline: 0; border-color: var(--accent); }
 .pick { margin-top: -6px; }
 .pick .tag { cursor: pointer; min-height: 30px; }
+.pick .ask { background: none; border: 1px solid var(--line2); color: var(--muted); }
+.pick input.new { width: 120px; min-height: 30px; background: var(--bg); border: 1px solid var(--accent); outline: 0; color: var(--text); }
 .checks { display: flex; flex-wrap: wrap; gap: 4px 18px; }
 .checks label { flex-direction: row; align-items: center; gap: 8px; min-height: 40px; font-size: 14px; color: var(--text); }
 .checks input { width: 18px; height: 18px; accent-color: var(--accent); }

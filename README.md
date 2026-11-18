@@ -4,7 +4,7 @@ A small, self-hosted bookmark manager for people who move between browsers. One 
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/crustovsky/marks)
 
-- **Quick access**: a grid of pinned sites with their icons, reordered by drag and drop
+- **Quick access**: a grid of pinned sites with their icons, reordered by dragging them with the mouse, or with a finger after pressing Edit
 - **Bookmarks**: tags instead of folders, search over title, address, note and tags
 - **Clean up in bulk**: Select on any list (a tag, a search, read later, everything) gives each row a tick box and one bar to add or remove tags, move to read later, bookmarks or the archive, or delete; it can act on the ticked rows or on everything the list matches, and says what it did
 - **Untagged** and **Suggested tags** lists appear in the sidebar while they have something in them; tags from the tagger are outlined until you keep or remove them
@@ -100,7 +100,7 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
                                      └─▶ Anthropic API (optional, tag suggestions)
 ```
 
-**Pages** are rendered on the server with Hono's JSX. One stylesheet and two small scripts are bundled into the Worker as text and served by it. They are not served through Workers static assets, because Workers with static assets run behind a router that does not pass the Access identity to the Worker, which would defeat the Access check. SortableJS is only loaded when you press Edit on the quick access grid.
+**Pages** are rendered on the server with Hono's JSX. One stylesheet and two small scripts are bundled into the Worker as text and served by it. They are not served through Workers static assets, because Workers with static assets run behind a router that does not pass the Access identity to the Worker, which would defeat the Access check. SortableJS is only loaded when the mouse reaches the quick access grid or you press Edit on it.
 
 **Duplicates** are found by a normalized form of the address (`url_norm`, unique): no scheme, no `www.`, no tracking parameters, no trailing slash, no fragment unless the fragment is a route. Adding an address that is already there opens that bookmark for editing; through the API it updates the bookmark and merges the tags. Either way an archived bookmark comes back. The address that is stored and opened is the one you saved, without tracking parameters unless you untick the box.
 

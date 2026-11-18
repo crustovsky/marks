@@ -499,7 +499,9 @@ export interface FormValues {
   strip: boolean;
 }
 
-export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolean; message?: string }> = ({ nav, v, popup, suggest, message }) => {
+// `suggest` asks the tagger as soon as the form opens, which is right for a new
+// bookmark. With `tagger` on and no such start, a button asks when pressed.
+export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolean; tagger: boolean; message?: string }> = ({ nav, v, popup, suggest, tagger, message }) => {
   const body = (
     <section class="form">
       <div class="head">
@@ -527,6 +529,14 @@ export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolea
               {t.tag}
             </button>
           ))}
+          <button type="button" class="tag ask" id="new-tag" aria-label="New tag" title="New tag" hidden>
+            +
+          </button>
+          {tagger && !suggest && (
+            <button type="button" class="tag ask" id="suggest" hidden>
+              Suggest tags
+            </button>
+          )}
         </div>
         <label>
           Note
