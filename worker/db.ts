@@ -16,16 +16,18 @@ export interface Bookmark {
   updated_at: number;
   icon: number | null; // when the site icon was fetched, null without one
   tags: string[];
+  auto: string[]; // those of the tags that the tagger added and nobody confirmed
 }
 
-type Row = Omit<Bookmark, "tags"> & { tags: string | null };
+type Row = Omit<Bookmark, "tags" | "auto"> & { tags: string | null; auto: string | null };
 
 const SELECT = `SELECT b.*,
   (SELECT group_concat(tag, ' ') FROM bookmark_tags t WHERE t.bookmark_id = b.id) AS tags,
+  (SELECT group_concat(tag, ' ') FROM bookmark_tags t WHERE t.bookmark_id = b.id AND t.auto = 1) AS auto,
   (SELECT fetched_at FROM icons i WHERE i.bookmark_id = b.id) AS icon
   FROM bookmarks b`;
 
-const toBookmark = (r: Row): Bookmark => ({ ...r, tags: r.tags ? r.tags.split(" ").sort() : [] });
+const toBookmark = (r: Row): Bookmark => ({ ...r, tags: r.tags ? r.tags.split(" ").sort() : [], auto: r.auto ? r.auto.split(" ") : [] });
 
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -33,11 +35,17 @@ export interface Filter {
   status?: Status;
   tag?: string;
   q?: string;
+  untagged?: boolean; // only bookmarks without any tag
+  suggested?: boolean; // only bookmarks with a tag from the tagger that nobody confirmed
   limit?: number;
   offset?: number;
 }
 
-export async function list(db: D1Database, f: Filter = {}): Promise<Bookmark[]> {
+const HAS_TAG = "EXISTS (SELECT 1 FROM bookmark_tags t WHERE t.bookmark_id = b.id";
+
+// The WHERE clause for a filter. Lists and "all matching" in select mode share
+// it, so a bulk change reaches exactly what the list shows.
+function match(f: Filter): { where: string; args: unknown[] } {
   const where: string[] = [];
   const args: unknown[] = [];
   if (f.status) {
@@ -57,9 +65,29 @@ export async function list(db: D1Database, f: Filter = {}): Promise<Bookmark[]> 
     );
     args.push(like, like, like, like);
   }
-  const sql = `${SELECT} WHERE ${where.join(" AND ")} ORDER BY b.created_at DESC, b.id DESC LIMIT ? OFFSET ?`;
+  if (f.untagged) where.push(`NOT ${HAS_TAG})`);
+  if (f.suggested) where.push(`${HAS_TAG} AND t.auto = 1)`);
+  return { where: where.join(" AND "), args };
+}
+
+export async function list(db: D1Database, f: Filter = {}): Promise<Bookmark[]> {
+  const { where, args } = match(f);
+  const sql = `${SELECT} WHERE ${where} ORDER BY b.created_at DESC, b.id DESC LIMIT ? OFFSET ?`;
   const { results } = await db.prepare(sql).bind(...args, f.limit ?? 200, f.offset ?? 0).all<Row>();
   return results.map(toBookmark);
+}
+
+export async function count(db: D1Database, f: Filter): Promise<number> {
+  const { where, args } = match(f);
+  const row = await db.prepare(`SELECT count(*) AS n FROM bookmarks b WHERE ${where}`).bind(...args).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+// Every bookmark a filter matches, not only one page of them.
+export async function ids(db: D1Database, f: Filter): Promise<number[]> {
+  const { where, args } = match(f);
+  const { results } = await db.prepare(`SELECT b.id FROM bookmarks b WHERE ${where}`).bind(...args).all<{ id: number }>();
+  return results.map((r) => r.id);
 }
 
 export async function pinned(db: D1Database): Promise<Bookmark[]> {
@@ -77,16 +105,20 @@ export async function byUrl(db: D1Database, url: URL): Promise<Bookmark | null> 
   return row ? toBookmark(row) : null;
 }
 
-export async function counts(db: D1Database): Promise<Record<Status, number>> {
+export type Counts = Record<Status | "untagged" | "suggested", number>;
+
+export async function counts(db: D1Database): Promise<Counts> {
   // Done notes count as archived, next to the archived bookmarks.
   const { results } = await db
     .prepare(
-      `SELECT status, count(*) AS n FROM bookmarks GROUP BY status
-       UNION ALL SELECT 'archived', count(*) FROM notes WHERE done_at IS NOT NULL`,
+      `SELECT status AS k, count(*) AS n FROM bookmarks GROUP BY status
+       UNION ALL SELECT 'archived', count(*) FROM notes WHERE done_at IS NOT NULL
+       UNION ALL SELECT 'untagged', count(*) FROM bookmarks b WHERE b.status != 'archived' AND NOT ${HAS_TAG})
+       UNION ALL SELECT 'suggested', count(*) FROM bookmarks b WHERE b.status != 'archived' AND ${HAS_TAG} AND t.auto = 1)`,
     )
-    .all<{ status: Status; n: number }>();
-  const out = { saved: 0, later: 0, archived: 0 };
-  for (const r of results) out[r.status] += r.n;
+    .all<{ k: keyof Counts; n: number }>();
+  const out: Counts = { saved: 0, later: 0, archived: 0, untagged: 0, suggested: 0 };
+  for (const r of results) out[r.k] += r.n;
   return out;
 }
 
@@ -201,19 +233,47 @@ export async function addAutoTags(db: D1Database, items: { id: number; tags: str
     .run();
 }
 
-export async function setStatus(db: D1Database, id: number, status: Status): Promise<void> {
-  await db.prepare("UPDATE bookmarks SET status = ?, updated_at = ? WHERE id = ?").bind(status, now(), id).run();
+// One bookmark or a whole selection: every change below is one statement over the ids.
+const IN_IDS = "IN (SELECT value FROM json_each(?1))";
+
+export async function setStatus(db: D1Database, ids: number[], status: Status): Promise<void> {
+  await db.prepare(`UPDATE bookmarks SET status = ?2, updated_at = ?3 WHERE id ${IN_IDS}`).bind(JSON.stringify(ids), status, now()).run();
+}
+
+// Adds the tags to every bookmark listed, or takes them off.
+export async function tagMany(db: D1Database, ids: number[], tags: string[], add: boolean): Promise<void> {
+  const sql = add
+    ? "INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag, auto) SELECT i.value, t.value, 0 FROM json_each(?1) i, json_each(?2) t"
+    : `DELETE FROM bookmark_tags WHERE bookmark_id ${IN_IDS} AND tag IN (SELECT value FROM json_each(?2))`;
+  await db.prepare(sql).bind(JSON.stringify(ids), JSON.stringify(tags)).run();
+}
+
+// The tagger's tags on these bookmarks: kept, which makes them ordinary tags, or taken off.
+export async function settleAuto(db: D1Database, ids: number[], keep: boolean): Promise<void> {
+  const sql = keep ? `UPDATE bookmark_tags SET auto = 0 WHERE auto = 1 AND bookmark_id ${IN_IDS}` : `DELETE FROM bookmark_tags WHERE auto = 1 AND bookmark_id ${IN_IDS}`;
+  await db.prepare(sql).bind(JSON.stringify(ids)).run();
+}
+
+// Renaming to a tag that exists merges the two.
+export async function renameTag(db: D1Database, from: string, to: string): Promise<void> {
+  if (from === to) return;
+  await db.batch([
+    db.prepare("UPDATE OR IGNORE bookmark_tags SET tag = ?2 WHERE tag = ?1").bind(from, to),
+    // What is left already had the new tag as well.
+    db.prepare("DELETE FROM bookmark_tags WHERE tag = ?1").bind(from),
+  ]);
 }
 
 export async function unpin(db: D1Database, id: number): Promise<void> {
   await db.prepare("UPDATE bookmarks SET pinned_pos = NULL WHERE id = ?").bind(id).run();
 }
 
-export async function remove(db: D1Database, id: number): Promise<void> {
+export async function remove(db: D1Database, ids: number[]): Promise<void> {
+  const json = JSON.stringify(ids);
   await db.batch([
-    db.prepare("DELETE FROM bookmark_tags WHERE bookmark_id = ?").bind(id),
-    db.prepare("DELETE FROM icons WHERE bookmark_id = ?").bind(id),
-    db.prepare("DELETE FROM bookmarks WHERE id = ?").bind(id),
+    db.prepare(`DELETE FROM bookmark_tags WHERE bookmark_id ${IN_IDS}`).bind(json),
+    db.prepare(`DELETE FROM icons WHERE bookmark_id ${IN_IDS}`).bind(json),
+    db.prepare(`DELETE FROM bookmarks WHERE id ${IN_IDS}`).bind(json),
   ]);
 }
 

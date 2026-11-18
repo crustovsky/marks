@@ -106,6 +106,13 @@ img.letter { object-fit: contain; }
 .actions a { border-color: transparent; color: var(--muted); }
 
 .pager { display: flex; justify-content: space-between; }
+.rows + .pager { margin-top: 12px; }
+.pager + .rows { margin-top: 12px; }
+.where { color: var(--accent); }
+.notice { margin-bottom: 12px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; }
+.more { display: none; }
+input[type="file"] { max-width: 100%; font: inherit; color: var(--muted); }
+input[type="file"]::file-selector-button { min-height: 44px; margin-right: 12px; padding: 0 16px; background: none; border: 1px solid var(--line2); border-radius: 10px; font: inherit; color: var(--text); cursor: pointer; }
 
 /* quick notes */
 .add-note { display: flex; gap: 8px; }
@@ -118,9 +125,17 @@ img.letter { object-fit: contain; }
 .form { max-width: 560px; }
 .form form#save { display: flex; flex-direction: column; gap: 14px; }
 .form label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
-.form input[type="text"] { height: 44px; padding: 0 12px; background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; font-size: 14px; color: var(--text); }
+.form input[type="text"], .whole input[type="text"], .bulk input[type="text"] { height: 44px; padding: 0 12px; background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; font-size: 14px; color: var(--text); }
+.whole { margin: 4px 0 12px; }
+.whole summary { color: var(--muted); font-size: 13px; cursor: pointer; min-height: 28px; }
+.whole form { margin-top: 10px; }
+/* select mode: the bar stays in view while the list scrolls under it */
+.bulk { position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line2); border-radius: 12px; }
+.bulk input[type="text"] { flex: 1 1 160px; min-width: 0; }
+.tick { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin: -10px 0 -10px -14px; cursor: pointer; }
+.tick input { width: 18px; height: 18px; accent-color: var(--accent); }
 .form input.mono { font-size: 13px; }
-.form input:focus { outline: 0; border-color: var(--accent); }
+.form input:focus, .whole input:focus, .bulk input:focus { outline: 0; border-color: var(--accent); }
 .pick { margin-top: -6px; }
 .pick .tag { cursor: pointer; min-height: 30px; }
 .checks { display: flex; flex-wrap: wrap; gap: 4px 18px; }
@@ -137,6 +152,14 @@ img.letter { object-fit: contain; }
   .shell { padding: 16px 14px 96px; }
   .side { display: none; }
   .strip { display: block; overflow-x: auto; }
+  /* On a phone the bar is three slim rows that scroll sideways, so it can stay pinned. */
+  .bulk { gap: 6px; padding: 8px 10px; border-radius: 0 0 12px 12px; }
+  .bulk .inline { flex-wrap: nowrap; overflow-x: auto; gap: 6px; }
+  .bulk .btn { flex: none; min-height: 36px; padding: 0 10px; font-size: 13px; }
+  .bulk label, .bulk .meta { flex: none; font-size: 13px; }
+  .bulk input[type="text"] { flex: 1 0 110px; height: 36px; }
+  .more { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .more a { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
   .strip .tags { flex-wrap: nowrap; }
   .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .tile a { padding: 12px 4px; gap: 8px; }

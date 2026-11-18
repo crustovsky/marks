@@ -6,6 +6,10 @@ A small, self-hosted bookmark manager for people who move between browsers. One 
 
 - **Quick access**: a grid of pinned sites with their icons, reordered by drag and drop
 - **Bookmarks**: tags instead of folders, search over title, address, note and tags
+- **Clean up in bulk**: Select on any list (a tag, a search, read later, everything) gives each row a tick box and one bar to add or remove tags, move to read later, bookmarks or the archive, or delete; it can act on the ticked rows or on everything the list matches, and says what it did
+- **Untagged** and **Suggested tags** lists appear in the sidebar while they have something in them; tags from the tagger are outlined until you keep or remove them
+- **Search inside a tag**: the search box on a tag's list searches that tag
+- **Rename a tag** on its page; renaming into a tag that exists merges the two
 - **Read later**: a queue with Done and Keep, separate from the bookmarks you keep
 - **Quick notes**: a line of text jotted on the home page, marked done when dealt with, kept in the archive
 - **Easy to add**: paste an address into the search box, use the bookmarklet, share to it on Android, or post to the API from an iOS Shortcut
@@ -87,7 +91,7 @@ curl https://<your address>/api/add \
   -d '{"url": "https://example.com/article", "later": true}'
 ```
 
-Body fields: `url` (required), `title`, `tags` (list or space separated text), `later` (adds it to the read later queue), `strip` (`false` keeps tracking parameters). Without a title the Worker reads it from the page. Without tags, and with tag suggestions on, the suggested tags are applied and marked as automatic in the database.
+Body fields: `url` (required), `title`, `tags` (list or space separated text), `later` (adds it to the read later queue), `strip` (`false` keeps tracking parameters). Without a title the Worker reads it from the page. Without tags, and with tag suggestions on, the suggested tags are applied and marked as automatic; they show outlined and collect in the Suggested tags list until kept or removed.
 
 ## How it works
 

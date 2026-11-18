@@ -2,11 +2,11 @@
 // few things that need a script.
 
 import type { Child, FC } from "hono/jsx";
-import type { Bookmark, Note, Status } from "./db";
+import type { Bookmark, Counts, Note, Status } from "./db";
 
 export interface Nav {
   title: string;
-  counts: Record<Status, number>;
+  counts: Counts;
   tags: { tag: string; n: number }[];
 }
 
@@ -41,12 +41,16 @@ const Head: FC<{ title: string }> = ({ title }) => (
   </head>
 );
 
-export const Layout: FC<{ nav: Nav; active?: string; q?: string; children?: Child }> = ({ nav, active, q, children }) => {
+// `tag` is the tag whose list this is: the search box then searches inside it.
+export const Layout: FC<{ nav: Nav; active?: string; q?: string; tag?: string; children?: Child }> = ({ nav, active, q, tag, children }) => {
   const views = [
     { id: "home", href: "/", label: "Home" },
     { id: "all", href: "/list", label: "All bookmarks", n: nav.counts.saved + nav.counts.later },
     { id: "later", href: "/list?view=later", label: "Read later", n: nav.counts.later },
     { id: "archived", href: "/list?view=archived", label: "Archive", n: nav.counts.archived },
+    // Two lists for cleaning up, shown while there is something in them.
+    ...(nav.counts.untagged ? [{ id: "untagged", href: "/list?untagged=1", label: "Untagged", n: nav.counts.untagged }] : []),
+    ...(nav.counts.suggested ? [{ id: "suggested", href: "/list?suggested=1", label: "Suggested tags", n: nav.counts.suggested }] : []),
   ];
   return (
     <html lang="en">
@@ -57,7 +61,16 @@ export const Layout: FC<{ nav: Nav; active?: string; q?: string; children?: Chil
             {nav.title}
           </a>
           <form class="search" action="/go" method="get" role="search">
-            <input name="q" type="text" value={q ?? ""} placeholder="Search, or paste a URL to save it" aria-label="Search or paste a URL" autocomplete="off" autocapitalize="off" />
+            {tag && <input type="hidden" name="tag" value={tag} />}
+            <input
+              name="q"
+              type="text"
+              value={q ?? ""}
+              placeholder={tag ? `Search in ${tag}, or paste a URL to save it` : "Search, or paste a URL to save it"}
+              aria-label="Search or paste a URL"
+              autocomplete="off"
+              autocapitalize="off"
+            />
             <kbd>/</kbd>
           </form>
           <a class="btn primary" href="/add">
@@ -80,7 +93,18 @@ export const Layout: FC<{ nav: Nav; active?: string; q?: string; children?: Chil
             <h2>Tags</h2>
             <TagCloud tags={nav.tags} />
           </nav>
-          <main>{children}</main>
+          <main>
+            {children}
+            {/* Phones have no sidebar; this is how they reach what the bottom bar leaves out. */}
+            <nav class="more" aria-label="More">
+              {views.slice(3).map((v) => (
+                <a href={v.href}>
+                  {v.label} <span class="n">{v.n}</span>
+                </a>
+              ))}
+              <a href="/settings">Settings</a>
+            </nav>
+          </main>
         </div>
         <nav class="bottom" aria-label="Main">
           <a href="/" class={active === "home" ? "active" : ""}>
@@ -114,7 +138,11 @@ const TagCloud: FC<{ tags: Nav["tags"]; current?: string }> = ({ tags, current }
   </div>
 );
 
-const Row: FC<{ b: Bookmark }> = ({ b }) => {
+// In select mode a row has a tick box instead of its own buttons. The box
+// belongs to the bulk form above the list through its form attribute.
+// `marks` says where a bookmark is when the list mixes them; `hide` is the tag
+// the whole list shares, which need not be repeated on every row.
+const Row: FC<{ b: Bookmark; select?: boolean; marks?: boolean; hide?: string }> = ({ b, select, marks, hide }) => {
   const action = (status: Status, label: string) => (
     <button name="status" value={status}>
       {label}
@@ -122,37 +150,47 @@ const Row: FC<{ b: Bookmark }> = ({ b }) => {
   );
   return (
     <li class="row">
+      {select && (
+        <label class="tick">
+          <input type="checkbox" name="id" value={b.id} form="bulk" aria-label={`Select ${b.title || host(b.url)}`} />
+        </label>
+      )}
       <div class="what">
         <a href={b.url} rel="noreferrer">
           {b.title || host(b.url)}
         </a>
         <span class="meta">
           {host(b.url)} · {ago(b.created_at)}
+          {marks && b.status === "later" && <span class="where"> · read later</span>}
         </span>
       </div>
       <div class="tags">
-        {b.tags.map((t) => (
-          <a class="tag" href={`/list?tag=${encodeURIComponent(t)}`}>
-            {t}
-          </a>
-        ))}
+        {b.tags
+          .filter((t) => t !== hide)
+          .map((t) => (
+            <a class={b.auto.includes(t) ? "tag suggested" : "tag"} title={b.auto.includes(t) ? "Suggested by the tagger" : undefined} href={`/list?tag=${encodeURIComponent(t)}`}>
+              {t}
+            </a>
+          ))}
       </div>
-      <form class="actions" method="post" action={`/b/${b.id}/status`}>
-        {b.status === "later" && action("archived", "Done")}
-        {b.status === "later" && action("saved", "Keep")}
-        {b.status === "saved" && action("later", "Later")}
-        {b.status === "archived" && action("saved", "Restore")}
-        <a href={`/edit/${b.id}`}>Edit</a>
-      </form>
+      {!select && (
+        <form class="actions" method="post" action={`/b/${b.id}/status`}>
+          {b.status === "later" && action("archived", "Done")}
+          {b.status === "later" && action("saved", "Keep")}
+          {b.status === "saved" && action("later", "Later")}
+          {b.status === "archived" && action("saved", "Restore")}
+          <a href={`/edit/${b.id}`}>Edit</a>
+        </form>
+      )}
     </li>
   );
 };
 
-const Rows: FC<{ items: Bookmark[]; empty: string }> = ({ items, empty }) =>
+const Rows: FC<{ items: Bookmark[]; empty: string; select?: boolean; marks?: boolean; hide?: string }> = ({ items, empty, select, marks, hide }) =>
   items.length ? (
     <ul class="rows">
       {items.map((b) => (
-        <Row b={b} />
+        <Row b={b} select={select} marks={marks} hide={hide} />
       ))}
     </ul>
   ) : (
@@ -266,36 +304,141 @@ export const Home: FC<{ nav: Nav; pinned: Bookmark[]; notes: Note[]; later: Book
   </Layout>
 );
 
-export const List: FC<{ nav: Nav; active: string; heading: string; items: Bookmark[]; notes: Note[]; q?: string; tag?: string; newer?: string; older?: string }> = (p) => (
-  <Layout nav={p.nav} active={p.active} q={p.q}>
+export interface Selecting {
+  ret: string; // this list, to come back to
+  fields: [string, string][]; // the list's filter, for "apply to all"
+}
+
+// The bar of select mode. The tags come first so that Enter in their field adds
+// tags; a browser submits a form with its first button.
+const Bulk: FC<{ s: Selecting; shown: number; total: number; tag?: string; auto: boolean }> = ({ s, shown, total, tag, auto }) => (
+  <form id="bulk" class="bulk" method="post" action="/bulk">
+    <input type="hidden" name="ret" value={s.ret} />
+    {s.fields.map(([name, value]) => (
+      <input type="hidden" name={name} value={value} />
+    ))}
+    <div class="inline">
+      <button type="button" class="btn" id="tick-all" hidden>
+        {total > shown ? "Tick all on this page" : "Tick all"}
+      </button>
+      <span class="meta" id="ticked" role="status" hidden></span>
+      {/* A list longer than one page: this reaches the rows that are not on screen.
+          On a single page it only stands in for the button above when scripts are off. */}
+      <label data-one-page={total > shown ? undefined : "1"}>
+        <input type="checkbox" name="all" value="1" data-total={total} />{" "}
+        {total > shown ? `Apply to all ${total} in this list, including the ${total - shown} on other pages` : `Apply to all ${total} in this list`}
+      </label>
+    </div>
+    <div class="inline">
+      <input type="text" name="tags" placeholder="tags" aria-label="Tags" autocapitalize="off" />
+      <button class="btn" name="do" value="tag">
+        Add tags
+      </button>
+      <button class="btn" name="do" value="untag">
+        Remove tags
+      </button>
+      {tag && (
+        <button class="btn" name="do" value="drop">
+          Remove tag {tag}
+        </button>
+      )}
+    </div>
+    {auto && (
+      <div class="inline">
+        <span class="meta">Suggested tags</span>
+        <button class="btn" name="do" value="keep">
+          Keep
+        </button>
+        <button class="btn" name="do" value="reject">
+          Remove
+        </button>
+      </div>
+    )}
+    <div class="inline">
+      <span class="meta">Move to</span>
+      <button class="btn" name="do" value="later">
+        Read later
+      </button>
+      <button class="btn" name="do" value="saved">
+        Bookmarks
+      </button>
+      <button class="btn" name="do" value="archived">
+        Archive
+      </button>
+      <button class="btn danger" name="do" value="delete">
+        Delete
+      </button>
+    </div>
+  </form>
+);
+
+const Pager: FC<{ newer?: string; older?: string }> = ({ newer, older }) =>
+  newer || older ? (
+    <div class="pager">
+      {newer ? (
+        <a class="btn" href={newer}>
+          Newer
+        </a>
+      ) : (
+        <span></span>
+      )}
+      {older && (
+        <a class="btn" href={older}>
+          Older
+        </a>
+      )}
+    </div>
+  ) : null;
+
+export const List: FC<{
+  nav: Nav;
+  active: string;
+  heading: string;
+  items: Bookmark[];
+  notes: Note[];
+  q?: string;
+  tag?: string;
+  first: number; // position of the first row in the whole list
+  total: number;
+  marks: boolean;
+  notice?: string;
+  newer?: string;
+  older?: string;
+  toggle: string;
+  select?: Selecting;
+}> = (p) => (
+  <Layout nav={p.nav} active={p.active} q={p.q} tag={p.tag}>
     <section>
       <div class="head">
         <h2>{p.heading}</h2>
         <span class="n">
-          {p.items.length}
-          {(p.newer || p.older) && " on this page"}
+          {p.total > p.items.length ? `${p.first}–${p.first + p.items.length - 1} of ${p.total}` : p.total}
+          {p.items.length > 0 && " · "}
+          {p.items.length > 0 && <a href={p.toggle}>{p.select ? "Done" : "Select"}</a>}
         </span>
       </div>
       <div class="strip">
         <TagCloud tags={p.nav.tags} current={p.tag} />
       </div>
-      <Rows items={p.items} empty="Nothing here." />
-      {(p.newer || p.older) && (
-        <div class="pager">
-          {p.newer ? (
-            <a class="btn" href={p.newer}>
-              Newer
-            </a>
-          ) : (
-            <span></span>
-          )}
-          {p.older && (
-            <a class="btn" href={p.older}>
-              Older
-            </a>
-          )}
-        </div>
+      {p.tag && !p.q && !p.select && p.items.length > 0 && (
+        <details class="whole">
+          <summary>Rename this tag</summary>
+          <form class="inline" method="post" action="/tag">
+            <input type="hidden" name="tag" value={p.tag} />
+            <input type="text" name="to" placeholder="new name" aria-label="New name" autocapitalize="off" required />
+            <button class="btn">Rename</button>
+          </form>
+        </details>
       )}
+      {p.select && <Bulk s={p.select} shown={p.items.length} total={p.total} tag={p.tag} auto={p.items.some((b) => b.auto.length > 0)} />}
+      {p.notice && (
+        <p class="notice" role="status">
+          {p.notice}
+        </p>
+      )}
+      <Pager newer={p.newer} older={p.older} />
+      <Rows items={p.items} empty="Nothing here." select={!!p.select} marks={p.marks} hide={p.tag} />
+      <Pager newer={p.newer} older={p.older} />
     </section>
     {p.notes.length > 0 && (
       <section>
@@ -306,6 +449,31 @@ export const List: FC<{ nav: Nav; active: string; heading: string; items: Bookma
         <Notes items={p.notes} />
       </section>
     )}
+  </Layout>
+);
+
+// Asked before a bulk delete goes through. Carries the ids, so what is deleted is what was counted.
+export const ConfirmDelete: FC<{ nav: Nav; ids: number[]; ret: string }> = ({ nav, ids, ret }) => (
+  <Layout nav={nav}>
+    <section>
+      <div class="head">
+        <h2>
+          Delete {ids.length} {ids.length === 1 ? "bookmark" : "bookmarks"}?
+        </h2>
+      </div>
+      <p>They are removed for good, not archived.</p>
+      <form class="inline" method="post" action="/bulk">
+        <input type="hidden" name="ids" value={ids.join(",")} />
+        <input type="hidden" name="ret" value={ret} />
+        <input type="hidden" name="do" value="delete" />
+        <button class="btn danger" name="confirm" value="1">
+          Delete
+        </button>
+        <a class="btn" href={ret}>
+          Cancel
+        </a>
+      </form>
+    </section>
   </Layout>
 );
 

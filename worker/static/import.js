@@ -75,7 +75,9 @@
           ? "Every bookmark already has a tag, so there was nothing to do."
           : !tagged
             ? `The model suggested no tags for the ${asked} bookmarks without any.`
-            : `Done. Tagged ${tagged} of ${asked} bookmarks without tags. Reload the page to see them.`;
+            : `Done. Tagged ${tagged} of ${asked} bookmarks without tags. `;
+        // The list where the new tags can be looked over, kept or removed.
+        if (tagged) tagStatus.append(Object.assign(document.createElement("a"), { href: "/list?suggested=1", textContent: "Review the suggested tags" }));
         break;
       }
       tagStatus.textContent = `Tagging, ${batch.left} left`;

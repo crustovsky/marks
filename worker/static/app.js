@@ -1,5 +1,6 @@
 // The only script the pages load. Everything works without it except drag to
-// reorder, the tag picker and tag suggestions.
+// reorder, the tag picker, tag suggestions and, in select mode, ticking a whole
+// page or a range at once and the count of what is ticked.
 (() => {
   const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -21,6 +22,41 @@
     form.addEventListener("submit", (e) => {
       if (!confirm(form.dataset.confirm)) e.preventDefault();
     });
+  }
+
+  // Select mode: a button ticks or unticks the whole page, and a click with
+  // Shift held gives every row since the last click the same tick.
+  const tickAll = $("#tick-all");
+  if (tickAll) {
+    const boxes = () => [...document.querySelectorAll(".tick input")];
+    const ticked = $("#ticked");
+    let last;
+    tickAll.hidden = false;
+    ticked.hidden = false;
+    // With everything on one page the button does what "apply to all" would.
+    $("[data-one-page]")?.remove();
+    const all = $('#bulk [name="all"]');
+    // How many bookmarks the next press of a button will change.
+    const count = () => {
+      ticked.textContent = all?.checked ? `all ${all.dataset.total} chosen` : `${boxes().filter((b) => b.checked).length} ticked`;
+    };
+    tickAll.addEventListener("click", () => {
+      const on = !boxes().every((b) => b.checked);
+      for (const b of boxes()) b.checked = on;
+      count();
+    });
+    document.addEventListener("click", (e) => {
+      const box = e.target.closest?.(".tick input");
+      if (!box) return;
+      if (e.shiftKey && last) {
+        const rows = boxes();
+        const [from, to] = [rows.indexOf(last), rows.indexOf(box)].sort((a, b) => a - b);
+        for (const b of rows.slice(from, to + 1)) b.checked = box.checked;
+      }
+      last = box;
+    });
+    document.addEventListener("change", count);
+    count();
   }
 
   // Quick access: Edit turns the tiles into something to drag and remove.

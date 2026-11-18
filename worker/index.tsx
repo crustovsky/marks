@@ -15,7 +15,7 @@ import importer from "./static/import.js";
 import styles from "./static/app.css";
 import { suggestTags, suggestTagsBulk } from "./tagger";
 import { cleanTags, cleanUrl, folderTags, looksLikeUrl, parseUrl } from "./url";
-import { Closing, Form, Home, List, Settings, Tags } from "./views";
+import { Closing, ConfirmDelete, Form, Home, List, Settings, Tags } from "./views";
 import type { FormValues, Nav } from "./views";
 
 type App = { Bindings: Env; Variables: { cfg: Config } };
@@ -108,29 +108,155 @@ app.get("/", async (c) => {
 // The box in the top bar: an address is something to save, anything else a search.
 app.get("/go", (c) => {
   const q = (c.req.query("q") ?? "").trim();
-  if (!q) return c.redirect("/list");
-  return c.redirect(looksLikeUrl(q) ? `/add?url=${encodeURIComponent(q)}` : `/list?q=${encodeURIComponent(q)}`);
+  // Searching from a tag's list stays inside that tag.
+  const tag = c.req.query("tag");
+  if (!q) return c.redirect(tag ? `/list?tag=${encodeURIComponent(tag)}` : "/list");
+  if (looksLikeUrl(q)) return c.redirect(`/add?url=${encodeURIComponent(q)}`);
+  return c.redirect(`/list?${new URLSearchParams(tag ? { q, tag } : { q })}`);
 });
 
 const PAGE = 200; // bookmarks per list page
 
+// What a list shows. Read from the list's address, and again from the hidden
+// fields of the select bar, so "apply to all" reaches what the list showed.
+const FILTER_KEYS = ["view", "tag", "q", "untagged", "suggested"] as const;
+
+function filterOf(get: (key: string) => string | undefined): db.Filter {
+  const view = get("view");
+  return {
+    status: view === "later" || view === "archived" ? view : undefined,
+    tag: get("tag") || undefined,
+    q: get("q") || undefined,
+    untagged: get("untagged") === "1" || undefined,
+    suggested: get("suggested") === "1" || undefined,
+  };
+}
+
+// What the select bar did last, for the line above the list.
+function notice(did: string | undefined, n: number): string | undefined {
+  const what = `${n} ${n === 1 ? "bookmark" : "bookmarks"}`;
+  switch (did) {
+    case "none":
+      return "Nothing was ticked, so nothing changed. Tick some rows first.";
+    case "later":
+      return `Moved ${what} to Read later.`;
+    case "saved":
+      return `Moved ${what} to Bookmarks.`;
+    case "archived":
+      return `Moved ${what} to the Archive.`;
+    case "tag":
+      return `Added tags to ${what}.`;
+    case "untag":
+    case "drop":
+      return `Removed tags from ${what}.`;
+    case "keep":
+      return `Kept the suggested tags of ${what}.`;
+    case "reject":
+      return `Removed the suggested tags of ${what}.`;
+    case "delete":
+      return `Deleted ${what}.`;
+  }
+}
+
 app.get("/list", async (c) => {
-  const { view, tag, q } = c.req.query();
-  const status = view === "later" || view === "archived" ? view : undefined;
+  const f = filterOf((k) => c.req.query(k));
+  const { status, tag, q } = f;
   const archive = status === "archived" && !tag && !q;
   // One row more than a page holds tells whether there is an older page.
   const pageNo = Math.max(1, Number(c.req.query("page")) || 1);
-  const [n, rows, notes] = await Promise.all([
+  const [n, rows, notes, total] = await Promise.all([
     nav(c),
-    db.list(c.env.DB, { status, tag, q, limit: PAGE + 1, offset: (pageNo - 1) * PAGE }),
+    db.list(c.env.DB, { ...f, limit: PAGE + 1, offset: (pageNo - 1) * PAGE }),
     archive && pageNo === 1 ? db.notes(c.env.DB, true) : [],
+    db.count(c.env.DB, f),
   ]);
   const items = rows.slice(0, PAGE);
-  const link = (p: number) => `/list?${new URLSearchParams({ ...c.req.query(), page: String(p) })}`;
+  // The outcome of the select bar rides on the address once and is not carried further.
+  const here = new URLSearchParams(c.req.query());
+  const said = notice(here.get("did") ?? undefined, Number(here.get("n")) || 0);
+  here.delete("did");
+  here.delete("n");
+  const link = (p: number) => `/list?${new URLSearchParams({ ...Object.fromEntries(here), page: String(p) })}`;
   const newer = pageNo > 1 ? link(pageNo - 1) : undefined;
   const older = rows.length > PAGE ? link(pageNo + 1) : undefined;
-  const heading = q ? `Search: ${q}` : tag ? `Tag: ${tag}` : status === "later" ? "Read later" : status === "archived" ? "Archive" : "All bookmarks";
-  return page(c, <List nav={n} active={q || tag ? "" : (status ?? "all")} heading={heading} items={items} notes={notes} q={q} tag={tag} newer={newer} older={older} />);
+  const where = f.untagged ? "Untagged" : f.suggested ? "Suggested tags" : status === "later" ? "Read later" : status === "archived" ? "Archive" : "All bookmarks";
+  const heading = q ? `Search: ${q}${tag ? ` in ${tag}` : ""}` : tag ? `Tag: ${tag}` : where;
+  const active = q || tag ? "" : f.untagged ? "untagged" : f.suggested ? "suggested" : (status ?? "all");
+  // Select mode: rows get tick boxes and the page a bar of changes for the ticked ones.
+  const selecting = here.get("select") === "1";
+  const fields = FILTER_KEYS.flatMap((k) => (here.get(k) ? [[k, here.get(k)!] as [string, string]] : []));
+  const select = selecting ? { ret: `/list?${here}`, fields } : undefined;
+  if (selecting) here.delete("select");
+  else here.set("select", "1");
+  return page(
+    c,
+    <List
+      nav={n}
+      active={active}
+      heading={heading}
+      items={items}
+      notes={notes}
+      q={q}
+      tag={tag}
+      first={(pageNo - 1) * PAGE + 1}
+      total={total}
+      marks={!status}
+      notice={said}
+      newer={newer}
+      older={older}
+      toggle={`/list?${here}`}
+      select={select}
+    />,
+  );
+});
+
+// The bar in select mode. Changes the ticked bookmarks, or with "apply to all"
+// everything the list's filter finds, on every page of it.
+app.post("/bulk", async (c) => {
+  const f = await c.req.parseBody({ all: true });
+  const many = (v: unknown) => (Array.isArray(v) ? v : v === undefined ? [] : [v]).map(String);
+  const one = (v: unknown) => many(v)[0] ?? "";
+  // Back to the list the bar was on, never to another site.
+  const ret = one(f.ret).startsWith("/list") ? one(f.ret) : "/list";
+  const done = (did: string, n: number) => c.redirect(`${ret}${ret.includes("?") ? "&" : "?"}${new URLSearchParams({ did, n: String(n) })}`, 303);
+  const filter = filterOf((k) => one(f[k]) || undefined);
+  const ids = one(f.ids)
+    ? one(f.ids).split(",").map(Number)
+    : one(f.all) === "1"
+      ? await db.ids(c.env.DB, filter)
+      : many(f.id).map(Number);
+  const picked = ids.filter(Number.isInteger);
+  const action = one(f.do);
+  if (!picked.length) return done("none", 0);
+  if (action === "later" || action === "saved" || action === "archived") {
+    await db.setStatus(c.env.DB, picked, action);
+  } else if (action === "tag" || action === "untag") {
+    const tags = cleanTags(one(f.tags));
+    if (!tags.length) return c.redirect(ret, 303);
+    await db.tagMany(c.env.DB, picked, tags, action === "tag");
+  } else if (action === "drop") {
+    // The button that names the tag of the list it is on.
+    if (!filter.tag) return c.redirect(ret, 303);
+    await db.tagMany(c.env.DB, picked, [filter.tag], false);
+  } else if (action === "keep" || action === "reject") {
+    await db.settleAuto(c.env.DB, picked, action === "keep");
+  } else if (action === "delete") {
+    // Deleting cannot be undone, so it asks first, on a page of its own that works without a script.
+    if (one(f.confirm) !== "1") return page(c, <ConfirmDelete nav={await nav(c)} ids={picked} ret={ret} />);
+    await db.remove(c.env.DB, picked);
+  } else {
+    return c.redirect(ret, 303);
+  }
+  return done(action, picked.length);
+});
+
+// The form on a tag's page: a new name for the tag. Naming a tag that exists merges the two.
+app.post("/tag", async (c) => {
+  const f = await c.req.parseBody();
+  const to = cleanTags(String(f.to ?? ""))[0];
+  if (!f.tag || !to) return back(c);
+  await db.renameTag(c.env.DB, String(f.tag), to);
+  return c.redirect(`/list?tag=${encodeURIComponent(to)}`, 303);
 });
 
 app.get("/tags", async (c) => page(c, <Tags nav={await nav(c)} />));
@@ -207,7 +333,7 @@ app.post("/save", async (c) => {
 app.post("/b/:id/status", async (c) => {
   const status = String((await c.req.parseBody()).status);
   if (status !== "saved" && status !== "later" && status !== "archived") return c.text("bad status", 400);
-  await db.setStatus(c.env.DB, Number(c.req.param("id")), status as Status);
+  await db.setStatus(c.env.DB, [Number(c.req.param("id"))], status as Status);
   return back(c);
 });
 
@@ -248,7 +374,7 @@ app.post("/b/:id/unpin", async (c) => {
 });
 
 app.post("/b/:id/delete", async (c) => {
-  await db.remove(c.env.DB, Number(c.req.param("id")));
+  await db.remove(c.env.DB, [Number(c.req.param("id"))]);
   const popup = (await c.req.parseBody()).popup === "1";
   return popup ? page(c, <Closing title={c.var.cfg.title} />) : c.redirect("/", 303);
 });
