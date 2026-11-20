@@ -28,7 +28,11 @@
   ],
   "vars": {
     "SITE_TITLE": "marks",
-    "TAG_MODEL": "claude-haiku-5-5"
+    "TAG_MODEL": "claude-haiku-5-5",
+    // Empty: icons are only ever asked of the bookmarked site itself. An address
+    // with {domain} in it, such as https://icons.duckduckgo.com/ip3/{domain}.ico,
+    // is asked when the site gives none, and learns that domain.
+    "ICON_SERVICE": ""
   },
   // Optional secret, set with `wrangler secret put`: ANTHROPIC_API_KEY (turns on tag suggestions).
   "observability": {

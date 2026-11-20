@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decode } from "../worker/page";
-import { cleanTags, cleanUrl, folderTags, looksLikeUrl, normalizeUrl, parseUrl } from "../worker/url";
+import { cleanTags, cleanUrl, folderTags, localPath, looksLikeUrl, normalizeUrl, parseUrl } from "../worker/url";
 
 const norm = (s: string) => normalizeUrl(parseUrl(s)!);
 
@@ -57,5 +57,18 @@ describe("folderTags", () => {
   it("drops the browser's own top level folders and joins words", () => {
     expect(folderTags(["Bookmarks bar", "Dev Tools", " House "])).toEqual(["dev-tools", "house"]);
     expect(folderTags(["Favorites", "Other Bookmarks"])).toEqual([]);
+  });
+});
+
+describe("localPath", () => {
+  it("accepts paths on this site", () => {
+    expect(localPath("/")).toBe("/");
+    expect(localPath("/list?view=later&page=2")).toBe("/list?view=later&page=2");
+    expect(localPath("/list?q=https://example.com")).toBe("/list?q=https://example.com");
+  });
+  it("rejects anything that could lead elsewhere", () => {
+    for (const to of ["", "list", "https://evil.example", "//evil.example", "/\\evil.example", "/\t/evil.example", "javascript:alert(1)", " /list"]) {
+      expect(localPath(to), JSON.stringify(to)).toBeNull();
+    }
   });
 });

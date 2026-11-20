@@ -15,6 +15,7 @@ export interface Bookmark {
   created_at: number;
   updated_at: number;
   icon: number | null; // when the site icon was fetched, null without one
+  icon_src: string | null; // icon set by hand: its address, "" for an upload, null when found automatically
   tags: string[];
   auto: string[]; // those of the tags that the tagger added and nobody confirmed
 }
@@ -24,7 +25,8 @@ type Row = Omit<Bookmark, "tags" | "auto"> & { tags: string | null; auto: string
 const SELECT = `SELECT b.*,
   (SELECT group_concat(tag, ' ') FROM bookmark_tags t WHERE t.bookmark_id = b.id) AS tags,
   (SELECT group_concat(tag, ' ') FROM bookmark_tags t WHERE t.bookmark_id = b.id AND t.auto = 1) AS auto,
-  (SELECT fetched_at FROM icons i WHERE i.bookmark_id = b.id) AS icon
+  (SELECT fetched_at FROM icons i WHERE i.bookmark_id = b.id) AS icon,
+  (SELECT url FROM icon_sources s WHERE s.bookmark_id = b.id) AS icon_src
   FROM bookmarks b`;
 
 const toBookmark = (r: Row): Bookmark => ({ ...r, tags: r.tags ? r.tags.split(" ").sort() : [], auto: r.auto ? r.auto.split(" ") : [] });
@@ -273,6 +275,7 @@ export async function remove(db: D1Database, ids: number[]): Promise<void> {
   await db.batch([
     db.prepare(`DELETE FROM bookmark_tags WHERE bookmark_id ${IN_IDS}`).bind(json),
     db.prepare(`DELETE FROM icons WHERE bookmark_id ${IN_IDS}`).bind(json),
+    db.prepare(`DELETE FROM icon_sources WHERE bookmark_id ${IN_IDS}`).bind(json),
     db.prepare(`DELETE FROM bookmarks WHERE id ${IN_IDS}`).bind(json),
   ]);
 }
@@ -293,6 +296,18 @@ export async function setIcon(db: D1Database, id: number, type: string, data: Ar
     .prepare("INSERT OR REPLACE INTO icons (bookmark_id, type, data, fetched_at) VALUES (?, ?, ?, ?)")
     .bind(id, type, data, now())
     .run();
+}
+
+// Where the icon comes from when it is set by hand: an address, or "" for an
+// upload. Null goes back to finding it automatically. The stored icon came
+// from the old source, so it goes too.
+export async function setIconSource(db: D1Database, id: number, src: string | null): Promise<void> {
+  await db.batch([
+    db.prepare("DELETE FROM icons WHERE bookmark_id = ?").bind(id),
+    src === null
+      ? db.prepare("DELETE FROM icon_sources WHERE bookmark_id = ?").bind(id)
+      : db.prepare("INSERT OR REPLACE INTO icon_sources (bookmark_id, url) VALUES (?, ?)").bind(id, src),
+  ]);
 }
 
 export async function getIcon(db: D1Database, id: number): Promise<{ type: string; data: Uint8Array } | null> {

@@ -44,6 +44,13 @@ export function normalizeUrl(u: URL): string {
   return host + path + s.search + hash;
 }
 
+// Where a form may send the browser afterwards: a path on this site, or null.
+// "//host" and "/\host" lead to another site, and browsers drop tabs and line
+// breaks from an address, which could turn a harmless looking path into one.
+export function localPath(to: string): string | null {
+  return /^\/(?![/\\])[^\\\x00-\x1f]*$/.test(to) ? to : null;
+}
+
 // Top level folders of a bookmarks export that say nothing about the bookmark.
 const PLAIN_FOLDER = /^(bookmarks?( bar| menu| toolbar)?|favou?rites( bar)?|other bookmarks|mobile bookmarks|imported|speed dial|unsorted bookmarks|toolbar|menu)$/i;
 

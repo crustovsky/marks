@@ -62,8 +62,9 @@ Set a long session duration on the Access application (a month, say), so each br
 | -------------- | ------------------ | ------- |
 | `SITE_TITLE`   | `marks`            | Name in the top bar and on the home screen icon. |
 | `TAG_MODEL`    | `claude-haiku-5-5` | Claude model used for tag suggestions. |
+| `ICON_SERVICE` | empty              | A public icon service to ask when a site's own icon cannot be found: an address with `{domain}` in it, for example `https://icons.duckduckgo.com/ip3/{domain}.ico`. Off when empty, because the service learns the domains of your pinned bookmarks. |
 
-Secret, optional: `ANTHROPIC_API_KEY`. Set it with `npm run wrangler secret put ANTHROPIC_API_KEY` or in the dashboard to turn tag suggestions on. The Worker then sends the address, title and description of a new bookmark, plus your list of tag names, to the Anthropic API. Tagging untagged bookmarks from the Settings page, or after an import with its box ticked, sends the address and title of each of them. Without the key nothing leaves the Worker except the requests that read a page's title and icon.
+Secret, optional: `ANTHROPIC_API_KEY`. Set it with `npm run wrangler secret put ANTHROPIC_API_KEY` or in the dashboard to turn tag suggestions on. The Worker then sends the address, title and description of a new bookmark, plus your list of tag names, to the Anthropic API. Tagging untagged bookmarks from the Settings page, or after an import with its box ticked, sends the address and title of each of them. Without the key nothing leaves the Worker except the requests that read a page's title and icon, which go to the bookmarked site and, only when `ICON_SERVICE` is set, to that service.
 
 ## Adding bookmarks
 
@@ -106,13 +107,15 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
 
 **Import**: the Settings page reads the exported file in the browser, which has a real HTML parser and no CPU limit, and sends the links to the Worker 500 at a time. The Worker decides what is a duplicate and which folders become tags, so a large file costs it no more per request than a small one. Running an import twice adds nothing twice. With tag suggestions on, the page then asks the Worker to tag the bookmarks that have no tags, 50 per request and one call to the model for each 50, until none are left.
 
-**Lists** show 200 bookmarks per page, newest first.
+**Lists** show 200 bookmarks per page, newest first. Edit on a row carries the list's address along (`/edit/7?back=...`), so Save, Cancel and Delete return to the same list and page. Only a path on the site itself is followed.
 
 **Headers**: every page carries a content security policy that allows scripts, styles and images from the Worker itself only, forbids framing and limits forms to the same origin.
 
-**Icons**: a pinned bookmark gets its site icon, read from the page (`apple-touch-icon`, then `rel="icon"`, then `/favicon.ico`) and kept in D1. Until it arrives, and for sites without one, the tile shows a coloured letter. In Edit mode each tile has a button that fetches the icon again.
+**Icons**: a pinned bookmark gets its site icon, kept in D1. The Worker reads the page the address leads to and takes the largest square icon it names (`rel="icon"`, `apple-touch-icon`, the web manifest), then `/favicon.ico`, then tries the same on the root domain (`example.com` for `accounts.example.com`), and last the icon service if `ICON_SERVICE` is set. Until the icon arrives, and for sites without one, the tile shows a coloured letter. In Edit mode each tile has a button that fetches the icon again.
 
-**Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid), `bookmark_tags`, `icons` and `notes`. Quick access and read later are fields, not tags.
+Some sites answer a Worker with a login wall or not at all, and hosts on a tailnet, `.local` names and private addresses cannot be reached from a Worker, so they are never asked. For those the edit form has an **Icon** section: an address to fetch the icon from, or a file to upload (PNG, SVG, ICO or WebP, up to 200 KB). Clearing it goes back to finding the icon automatically.
+
+**Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid), `bookmark_tags`, `icons`, `icon_sources` (icons set by hand) and `notes`. Quick access and read later are fields, not tags.
 
 **API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `POST /api/note` with `{ "text": "..." }`, `POST /api/import` with `{ "items": [{ "url", "title", "folders", "created" }] }` (at most 500), `POST /api/tag` with `{ "after": id }` (tags the next 50 untagged bookmarks), `GET /api/export`.
 
@@ -133,7 +136,8 @@ worker/views.tsx   pages
 worker/db.ts       every D1 query
 worker/schema.ts   tables, created on first use
 worker/url.ts      address cleaning and the duplicate key
-worker/page.ts     reads a page's title and icon
+worker/page.ts     reads a page's title
+worker/icon.ts     finds a site's icon
 worker/tagger.ts   tag suggestions
 worker/static/     stylesheet, page script, bookmarks import
 test/              vitest

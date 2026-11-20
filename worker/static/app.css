@@ -128,7 +128,8 @@ input[type="file"]::file-selector-button { min-height: 44px; margin-right: 12px;
 .form label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
 .form input[type="text"], .whole input[type="text"], .bulk input[type="text"] { height: 44px; padding: 0 12px; background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; font-size: 14px; color: var(--text); }
 .whole { margin: 4px 0 12px; }
-.whole summary { color: var(--muted); font-size: 13px; cursor: pointer; min-height: 28px; }
+.whole summary, .form summary { color: var(--muted); font-size: 13px; cursor: pointer; min-height: 28px; }
+.form details label { margin-top: 10px; }
 .whole form { margin-top: 10px; }
 /* select mode: the bar stays in view while the list scrolls under it */
 .bulk { position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line2); border-radius: 12px; }

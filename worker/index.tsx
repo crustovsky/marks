@@ -8,13 +8,14 @@ import { loadConfig } from "./config";
 import type { Config } from "./config";
 import * as db from "./db";
 import type { Status } from "./db";
-import { fetchIcon, fetchPage } from "./page";
+import { MAX_ICON, asIcon, fetchIcon, findIcon } from "./icon";
+import { fetchPage } from "./page";
 import { ensureSchema } from "./schema";
 import script from "./static/app.js";
 import importer from "./static/import.js";
 import styles from "./static/app.css";
 import { suggestTags, suggestTagsBulk } from "./tagger";
-import { cleanTags, cleanUrl, folderTags, looksLikeUrl, parseUrl } from "./url";
+import { cleanTags, cleanUrl, folderTags, localPath, looksLikeUrl, parseUrl } from "./url";
 import { Closing, ConfirmDelete, Form, Home, List, Settings, Tags } from "./views";
 import type { FormValues, Nav } from "./views";
 
@@ -185,7 +186,9 @@ app.get("/list", async (c) => {
   // Select mode: rows get tick boxes and the page a bar of changes for the ticked ones.
   const selecting = here.get("select") === "1";
   const fields = FILTER_KEYS.flatMap((k) => (here.get(k) ? [[k, here.get(k)!] as [string, string]] : []));
-  const select = selecting ? { ret: `/list?${here}`, fields } : undefined;
+  // This list and page, for the select bar and the edit form to come back to.
+  const self = here.size ? `/list?${here}` : "/list";
+  const select = selecting ? { ret: self, fields } : undefined;
   if (selecting) here.delete("select");
   else here.set("select", "1");
   return page(
@@ -205,6 +208,7 @@ app.get("/list", async (c) => {
       newer={newer}
       older={older}
       toggle={`/list?${here}`}
+      back={self}
       select={select}
     />,
   );
@@ -270,6 +274,8 @@ const fromBookmark = (b: db.Bookmark): FormValues => ({
   pin: b.pinned_pos !== null,
   later: b.status === "later",
   strip: false, // it was cleaned, or deliberately not, when it was first saved
+  iconUrl: b.icon_src ?? "",
+  uploaded: b.icon_src === "",
 });
 
 // Opened by the search box, the bookmarklet (popup=1) and the Android share sheet.
@@ -280,7 +286,7 @@ app.get("/add", async (c) => {
   const existing = url ? await db.byUrl(c.env.DB, url) : null;
   const v: FormValues = existing
     ? fromBookmark(existing)
-    : { url: url?.href ?? raw, title: q.title ?? "", note: "", tags: [], pin: false, later: false, strip: true };
+    : { url: url?.href ?? raw, title: q.title ?? "", note: "", tags: [], pin: false, later: false, strip: true, iconUrl: "", uploaded: false };
   const message = existing ? "Already saved. Saving again updates it." : undefined;
   return page(c, <Form nav={await nav(c)} v={v} popup={q.popup === "1"} suggest={!!c.var.cfg.apiKey && !existing && !!url} tagger={!!c.var.cfg.apiKey} message={message} />);
 });
@@ -288,12 +294,15 @@ app.get("/add", async (c) => {
 app.get("/edit/:id", async (c) => {
   const b = await db.byId(c.env.DB, Number(c.req.param("id")));
   if (!b) return c.notFound();
-  return page(c, <Form nav={await nav(c)} v={fromBookmark(b)} popup={false} suggest={false} tagger={!!c.var.cfg.apiKey} />);
+  // Lists link here with their own address in `back`, to return to after Save, Cancel or Delete.
+  const back = localPath(c.req.query("back") ?? "") ?? undefined;
+  return page(c, <Form nav={await nav(c)} v={fromBookmark(b)} popup={false} suggest={false} tagger={!!c.var.cfg.apiKey} back={back} />);
 });
 
 app.post("/save", async (c) => {
   const f = await c.req.parseBody();
   const popup = f.popup === "1";
+  const back = localPath(String(f.back ?? "")) ?? undefined;
   const v: FormValues = {
     id: Number(f.id) || undefined,
     url: String(f.url ?? "").trim(),
@@ -303,11 +312,19 @@ app.post("/save", async (c) => {
     pin: f.pin === "on",
     later: f.later === "on",
     strip: f.strip === "on",
+    iconUrl: String(f.icon_url ?? "").trim(),
+    uploaded: f.icon_keep === "on",
   };
-  const fail = async (message: string) => page(c, <Form nav={await nav(c)} v={v} popup={popup} suggest={false} tagger={!!c.var.cfg.apiKey} message={message} />, 400);
+  const fail = async (message: string) =>
+    page(c, <Form nav={await nav(c)} v={v} popup={popup} suggest={false} tagger={!!c.var.cfg.apiKey} message={message} back={back} />, 400);
 
   const url = parseUrl(v.url);
   if (!url) return fail("That does not look like a web address.");
+  const iconUrl = v.iconUrl ? parseUrl(v.iconUrl) : null;
+  if (v.iconUrl && !iconUrl) return fail("The icon URL does not look like a web address.");
+  const file = f.icon_file instanceof File && f.icon_file.size ? f.icon_file : null;
+  const upload = file && file.size <= MAX_ICON ? asIcon(await file.arrayBuffer(), file.type) : null;
+  if (file && !upload) return fail(`The icon has to be an image of at most ${MAX_ICON / 1024} KB.`);
   if (!v.title) v.title = (await fetchPage(url.href)).title;
   const id = await db.save(c.env.DB, {
     id: v.id,
@@ -325,9 +342,17 @@ app.post("/save", async (c) => {
     replaceTags: !!v.id,
   });
   if (id === null) return fail("Another bookmark already has this address.");
+  // An icon set by hand: a new file wins over an address, an address over the
+  // file uploaded before. With none of them the icon is found automatically.
+  const had = (await db.byId(c.env.DB, id))?.icon_src ?? null;
+  const src = upload ? "" : iconUrl ? iconUrl.href : v.uploaded && had === "" ? "" : null;
+  if (upload || src !== had) await db.setIconSource(c.env.DB, id, src);
+  if (upload) await db.setIcon(c.env.DB, id, upload.type, upload.data);
   // A pinned bookmark gets its site icon; the tile shows a letter until it is there.
-  if (v.pin) c.executionCtx.waitUntil(loadIcon(c.env.DB, id, false));
-  return popup ? page(c, <Closing title={c.var.cfg.title} />) : c.redirect("/", 303);
+  if (v.pin) c.executionCtx.waitUntil(loadIcon(c, id, false));
+  if (popup) return page(c, <Closing title={c.var.cfg.title} />);
+  // The anchor scrolls the list back to the row that was edited.
+  return c.redirect(back ? `${back}#b-${id}` : "/", 303);
 });
 
 app.post("/b/:id/status", async (c) => {
@@ -337,19 +362,19 @@ app.post("/b/:id/status", async (c) => {
   return back(c);
 });
 
-// Fetches the site icon for a bookmark. Without `again`, only when it has none yet.
-async function loadIcon(d1: D1Database, id: number, again: boolean): Promise<void> {
-  const b = await db.byId(d1, id);
-  if (!b || (b.icon && !again)) return;
-  for (const candidate of (await fetchPage(b.url)).icons) {
-    const icon = await fetchIcon(candidate);
-    if (icon) return db.setIcon(d1, id, icon.type, icon.data);
-  }
+// Fetches the icon for a bookmark. Without `again`, only when it has none yet.
+// An uploaded icon has nothing to fetch, and an icon address given on the edit
+// form is used as it is. A bookmark that ends up without an icon keeps its letter.
+async function loadIcon(c: Ctx, id: number, again: boolean): Promise<void> {
+  const b = await db.byId(c.env.DB, id);
+  if (!b || (b.icon && !again) || b.icon_src === "") return;
+  const icon = b.icon_src ? await fetchIcon(b.icon_src) : await findIcon(b.url, c.var.cfg.iconService);
+  if (icon) await db.setIcon(c.env.DB, id, icon.type, icon.data);
 }
 
 // The refresh button on a quick access tile.
 app.post("/b/:id/icon", async (c) => {
-  await loadIcon(c.env.DB, Number(c.req.param("id")), true);
+  await loadIcon(c, Number(c.req.param("id")), true);
   return back(c);
 });
 
@@ -375,8 +400,8 @@ app.post("/b/:id/unpin", async (c) => {
 
 app.post("/b/:id/delete", async (c) => {
   await db.remove(c.env.DB, [Number(c.req.param("id"))]);
-  const popup = (await c.req.parseBody()).popup === "1";
-  return popup ? page(c, <Closing title={c.var.cfg.title} />) : c.redirect("/", 303);
+  const f = await c.req.parseBody();
+  return f.popup === "1" ? page(c, <Closing title={c.var.cfg.title} />) : c.redirect(localPath(String(f.back ?? "")) ?? "/", 303);
 });
 
 // Quick notes: added from the home page, done moves them to the archive.

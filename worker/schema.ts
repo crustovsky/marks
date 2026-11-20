@@ -27,6 +27,12 @@ const SCHEMA = [
     data BLOB NOT NULL,
     fetched_at INTEGER NOT NULL
   )`,
+  // An icon set by hand on the edit form: the address it is fetched from, or ''
+  // for an uploaded file. Bookmarks without a row find their icon themselves.
+  `CREATE TABLE IF NOT EXISTS icon_sources (
+    bookmark_id INTEGER PRIMARY KEY,
+    url TEXT NOT NULL
+  )`,
   // Quick notes: a line of text that is open until marked done.
   `CREATE TABLE IF NOT EXISTS notes (
     id INTEGER PRIMARY KEY,

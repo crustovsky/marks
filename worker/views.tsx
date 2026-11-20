@@ -142,14 +142,15 @@ const TagCloud: FC<{ tags: Nav["tags"]; current?: string }> = ({ tags, current }
 // belongs to the bulk form above the list through its form attribute.
 // `marks` says where a bookmark is when the list mixes them; `hide` is the tag
 // the whole list shares, which need not be repeated on every row.
-const Row: FC<{ b: Bookmark; select?: boolean; marks?: boolean; hide?: string }> = ({ b, select, marks, hide }) => {
+// `back` is the page the row is on, which the edit form returns to.
+const Row: FC<{ b: Bookmark; back: string; select?: boolean; marks?: boolean; hide?: string }> = ({ b, back, select, marks, hide }) => {
   const action = (status: Status, label: string) => (
     <button name="status" value={status}>
       {label}
     </button>
   );
   return (
-    <li class="row">
+    <li class="row" id={`b-${b.id}`}>
       {select && (
         <label class="tick">
           <input type="checkbox" name="id" value={b.id} form="bulk" aria-label={`Select ${b.title || host(b.url)}`} />
@@ -179,18 +180,18 @@ const Row: FC<{ b: Bookmark; select?: boolean; marks?: boolean; hide?: string }>
           {b.status === "later" && action("saved", "Keep")}
           {b.status === "saved" && action("later", "Later")}
           {b.status === "archived" && action("saved", "Restore")}
-          <a href={`/edit/${b.id}`}>Edit</a>
+          <a href={`/edit/${b.id}?back=${encodeURIComponent(back)}`}>Edit</a>
         </form>
       )}
     </li>
   );
 };
 
-const Rows: FC<{ items: Bookmark[]; empty: string; select?: boolean; marks?: boolean; hide?: string }> = ({ items, empty, select, marks, hide }) =>
+const Rows: FC<{ items: Bookmark[]; empty: string; back: string; select?: boolean; marks?: boolean; hide?: string }> = ({ items, empty, back, select, marks, hide }) =>
   items.length ? (
     <ul class="rows">
       {items.map((b) => (
-        <Row b={b} select={select} marks={marks} hide={hide} />
+        <Row b={b} back={back} select={select} marks={marks} hide={hide} />
       ))}
     </ul>
   ) : (
@@ -291,7 +292,7 @@ export const Home: FC<{ nav: Nav; pinned: Bookmark[]; notes: Note[]; later: Book
           <h2>Read later</h2>
           <a href="/list?view=later">All {nav.counts.later}</a>
         </div>
-        <Rows items={later} empty="" />
+        <Rows items={later} empty="" back="/" />
       </section>
     )}
     <section>
@@ -299,7 +300,7 @@ export const Home: FC<{ nav: Nav; pinned: Bookmark[]; notes: Note[]; later: Book
         <h2>Recently added</h2>
         <a href="/list">All</a>
       </div>
-      <Rows items={recent} empty="No bookmarks yet. Paste a URL into the box above, or import your browser's bookmarks under Settings." />
+      <Rows items={recent} empty="No bookmarks yet. Paste a URL into the box above, or import your browser's bookmarks under Settings." back="/" />
     </section>
   </Layout>
 );
@@ -405,6 +406,7 @@ export const List: FC<{
   newer?: string;
   older?: string;
   toggle: string;
+  back: string; // this list and page, where the edit form returns to
   select?: Selecting;
 }> = (p) => (
   <Layout nav={p.nav} active={p.active} q={p.q} tag={p.tag}>
@@ -437,7 +439,7 @@ export const List: FC<{
         </p>
       )}
       <Pager newer={p.newer} older={p.older} />
-      <Rows items={p.items} empty="Nothing here." select={!!p.select} marks={p.marks} hide={p.tag} />
+      <Rows items={p.items} empty="Nothing here." back={p.back} select={!!p.select} marks={p.marks} hide={p.tag} />
       <Pager newer={p.newer} older={p.older} />
     </section>
     {p.notes.length > 0 && (
@@ -497,20 +499,24 @@ export interface FormValues {
   pin: boolean;
   later: boolean;
   strip: boolean;
+  iconUrl: string; // empty finds the icon automatically
+  uploaded: boolean; // an uploaded icon is in use
 }
 
 // `suggest` asks the tagger as soon as the form opens, which is right for a new
 // bookmark. With `tagger` on and no such start, a button asks when pressed.
-export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolean; tagger: boolean; message?: string }> = ({ nav, v, popup, suggest, tagger, message }) => {
+// `back` is the list the form was opened from: Save, Cancel and Delete return there.
+export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolean; tagger: boolean; message?: string; back?: string }> = ({ nav, v, popup, suggest, tagger, message, back }) => {
   const body = (
     <section class="form">
       <div class="head">
         <h1>{v.id ? "Edit bookmark" : "Add bookmark"}</h1>
       </div>
       {message && <p class="note">{message}</p>}
-      <form method="post" action="/save" id="save">
+      <form method="post" action="/save" id="save" enctype="multipart/form-data">
         {v.id && <input type="hidden" name="id" value={v.id} />}
         {popup && <input type="hidden" name="popup" value="1" />}
+        {back && <input type="hidden" name="back" value={back} />}
         <label>
           URL
           <input name="url" type="text" inputmode="url" value={v.url} required autocapitalize="off" autocomplete="off" class="mono" />
@@ -553,16 +559,36 @@ export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolea
             <input type="checkbox" name="strip" checked={v.strip} /> Strip tracking
           </label>
         </div>
+        {/* For sites whose icon cannot be found, or cannot be reached from here at all. */}
+        <details open={!!v.iconUrl || v.uploaded}>
+          <summary>Icon</summary>
+          <label>
+            Icon URL
+            <input name="icon_url" type="text" inputmode="url" value={v.iconUrl} placeholder="Found on the site when left empty" autocapitalize="off" autocomplete="off" class="mono" />
+          </label>
+          <label>
+            Or upload one: PNG, SVG, ICO or WebP
+            <input name="icon_file" type="file" accept="image/png,image/svg+xml,image/x-icon,image/webp,.ico" />
+          </label>
+          {v.uploaded && (
+            <div class="checks">
+              <label>
+                <input type="checkbox" name="icon_keep" checked /> Keep the uploaded icon
+              </label>
+            </div>
+          )}
+        </details>
       </form>
       <div class="buttons">
         {v.id && (
           <form method="post" action={`/b/${v.id}/delete`} data-confirm="Delete this bookmark?">
             {popup && <input type="hidden" name="popup" value="1" />}
+            {back && <input type="hidden" name="back" value={back} />}
             <button class="btn danger">Delete</button>
           </form>
         )}
         <span class="grow"></span>
-        <a class="btn" href="/" data-close={popup ? "1" : undefined}>
+        <a class="btn" href={back ? `${back}#b-${v.id}` : "/"} data-close={popup ? "1" : undefined}>
           Cancel
         </a>
         <button class="btn primary" form="save">

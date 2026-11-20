@@ -1,21 +1,12 @@
-// Reads a page's title, description and site icon.
+// Reads a page's title and description. Its icon is found in icon.ts.
 
 export interface PageInfo {
   title: string;
   description: string;
-  icons: string[]; // candidate icon addresses, best first
 }
 
 export async function fetchPage(url: string): Promise<PageInfo> {
-  const info: PageInfo = { title: "", description: "", icons: [] };
-  const touch: string[] = [];
-  const plain: string[] = [];
-  const href = (list: string[]) => ({
-    element: (e: Element) => {
-      const h = e.getAttribute("href");
-      if (h && URL.canParse(h, url)) list.push(new URL(h, url).href);
-    },
-  });
+  const info: PageInfo = { title: "", description: "" };
   try {
     const res = await fetch(url, {
       headers: { "user-agent": "Mozilla/5.0 (compatible; marks)", accept: "text/html" },
@@ -28,8 +19,6 @@ export async function fetchPage(url: string): Promise<PageInfo> {
       .on("title", { element: () => void titles++, text: (t) => void (titles === 1 && (info.title += t.text)) })
       .on('meta[property="og:title"]', { element: (e) => void (og = e.getAttribute("content") ?? "") })
       .on('meta[name="description"]', { element: (e) => void (info.description = e.getAttribute("content") ?? "") })
-      .on('link[rel="apple-touch-icon"]', href(touch))
-      .on('link[rel~="icon"]', href(plain))
       .transform(res);
     await rewritten.arrayBuffer();
     info.title = decode(info.title || og).replace(/\s+/g, " ").trim().slice(0, 300);
@@ -37,23 +26,7 @@ export async function fetchPage(url: string): Promise<PageInfo> {
   } catch {
     // Unreachable or slow pages are saved with the address as their title.
   }
-  // Touch icons are the larger ones; /favicon.ico is the fallback every site may have.
-  info.icons = [...touch, ...plain, new URL("/favicon.ico", url).href];
   return info;
-}
-
-const MAX_ICON = 200 * 1024;
-
-export async function fetchIcon(url: string): Promise<{ type: string; data: ArrayBuffer } | null> {
-  try {
-    const res = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; marks)" }, signal: AbortSignal.timeout(5000) });
-    const type = (res.headers.get("content-type") ?? "").split(";")[0].trim();
-    if (!res.ok || !type.startsWith("image/")) return null;
-    const data = await res.arrayBuffer();
-    return data.byteLength > 0 && data.byteLength <= MAX_ICON ? { type, data } : null;
-  } catch {
-    return null;
-  }
 }
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };

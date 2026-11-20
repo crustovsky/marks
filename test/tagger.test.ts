@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { suggestTags, suggestTagsBulk } from "../worker/tagger";
 
-const cfg = { title: "marks", tagModel: "claude-haiku-5-5", apiKey: "test" };
+const cfg = { title: "marks", tagModel: "claude-haiku-5-5", apiKey: "test", iconService: "" };
 const pages = [
   { id: 1, url: "https://example.com/a", title: "A" },
   { id: 2, url: "https://example.com/b", title: "B" },
