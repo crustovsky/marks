@@ -120,6 +120,19 @@ describe("fetching", () => {
     expect(await findIcon("https://example.com/", "https://icons.example.net/{domain}.ico")).not.toBeNull();
   });
 
+  it("stops reading a body that outgrows the limit", async () => {
+    let sent = 0;
+    // A PNG that never ends and declares no length.
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(sent++ ? new Uint8Array(64 * 1024) : new Uint8Array(PNG));
+      },
+    });
+    serve({ "https://cdn.example.com/big.png": () => new Response(endless, { headers: { "content-type": "image/png" } }) });
+    expect(await fetchIcon("https://cdn.example.com/big.png")).toBeNull();
+    expect(sent * 64 * 1024).toBeLessThan(2 * MAX_ICON);
+  });
+
   it("fetches a given icon address as it is", async () => {
     const fetch = serve({ "https://cdn.example.com/logo.png": () => new Response(PNG, { headers: { "content-type": "application/octet-stream" } }) });
     expect((await fetchIcon("https://cdn.example.com/logo.png"))?.type).toBe("image/png");

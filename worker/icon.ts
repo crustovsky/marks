@@ -113,15 +113,31 @@ function budget(): Get {
   };
 }
 
-async function image(res: Response | null): Promise<Icon | null> {
-  if (!res) return null;
-  try {
-    if (Number(res.headers.get("content-length")) > MAX_ICON) {
-      await res.body?.cancel();
+// Reads a body up to the size limit and gives up on anything longer. The
+// length a server declares cannot be relied on, and it may declare none, so
+// the bytes are counted as they arrive and the rest is never held in memory.
+async function read(body: ReadableStream<Uint8Array>): Promise<ArrayBuffer | null> {
+  const reader = body.getReader();
+  const out = new Uint8Array(MAX_ICON);
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return out.slice(0, size).buffer;
+    if (size + value.byteLength > MAX_ICON) {
+      await reader.cancel();
       return null;
     }
+    out.set(value, size);
+    size += value.byteLength;
+  }
+}
+
+async function image(res: Response | null): Promise<Icon | null> {
+  if (!res?.body) return null;
+  try {
     const declared = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-    return asIcon(await res.arrayBuffer(), declared);
+    const data = await read(res.body);
+    return data && asIcon(data, declared);
   } catch {
     return null;
   }
