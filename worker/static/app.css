@@ -146,6 +146,7 @@ input[type="file"]::file-selector-button { min-height: 44px; margin-right: 12px;
 .checks label { flex-direction: row; align-items: center; gap: 8px; min-height: 40px; font-size: 14px; color: var(--text); }
 .checks input { width: 18px; height: 18px; accent-color: var(--accent); }
 .buttons { display: flex; gap: 10px; margin-top: 8px; }
+.buttons .meta { align-self: center; }
 .grow { flex: 1; }
 .inline { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .popup main { padding: 20px; background: var(--panel); min-height: 100vh; }

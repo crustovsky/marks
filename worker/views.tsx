@@ -506,7 +506,10 @@ export interface FormValues {
 // `suggest` asks the tagger as soon as the form opens, which is right for a new
 // bookmark. With `tagger` on and no such start, a button asks when pressed.
 // `back` is the list the form was opened from: Save, Cancel and Delete return there.
-export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolean; tagger: boolean; message?: string; back?: string }> = ({ nav, v, popup, suggest, tagger, message, back }) => {
+// `carry` says the bookmark lacks an icon the Worker cannot get: the bookmarklet's
+// window then takes it from the page, and the edit form says how to get it.
+export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolean; tagger: boolean; message?: string; back?: string; carry?: boolean }> = ({ nav, v, popup, suggest, tagger, message, back, carry }) => {
+  const hint = carry && !popup && !!v.id;
   const body = (
     <section class="form">
       <div class="head">
@@ -517,6 +520,7 @@ export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolea
         {v.id && <input type="hidden" name="id" value={v.id} />}
         {popup && <input type="hidden" name="popup" value="1" />}
         {back && <input type="hidden" name="back" value={back} />}
+        {carry && popup && <input type="file" name="icon_page" id="carry" hidden />}
         <label>
           URL
           <input name="url" type="text" inputmode="url" value={v.url} required autocapitalize="off" autocomplete="off" class="mono" />
@@ -560,8 +564,9 @@ export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolea
           </label>
         </div>
         {/* For sites whose icon cannot be found, or cannot be reached from here at all. */}
-        <details open={!!v.iconUrl || v.uploaded}>
+        <details open={!!v.iconUrl || v.uploaded || hint}>
           <summary>Icon</summary>
+          {hint && <p class="meta">No icon could be fetched for this site. Open the site and press the bookmarklet there: it brings the page's icon along. Or set one here.</p>}
           <label>
             Icon URL
             <input name="icon_url" type="text" inputmode="url" value={v.iconUrl} placeholder="Found on the site when left empty" autocapitalize="off" autocomplete="off" class="mono" />
@@ -588,6 +593,11 @@ export const Form: FC<{ nav: Nav; v: FormValues; popup: boolean; suggest: boolea
           </form>
         )}
         <span class="grow"></span>
+        {carry && popup && (
+          <span class="meta" id="carried" hidden>
+            With this page's icon
+          </span>
+        )}
         <a class="btn" href={back ? `${back}#b-${v.id}` : "/"} data-close={popup ? "1" : undefined}>
           Cancel
         </a>
@@ -622,8 +632,7 @@ export const Closing: FC<{ title: string }> = ({ title }) => (
   </html>
 );
 
-export const Settings: FC<{ nav: Nav; origin: string; tagger: boolean }> = ({ nav, origin, tagger }) => {
-  const bookmarklet = `javascript:(()=>{window.open('${origin}/add?popup=1&url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'marks','width=480,height=640')})()`;
+export const Settings: FC<{ nav: Nav; bookmarklet: string; tagger: boolean }> = ({ nav, bookmarklet, tagger }) => {
   return (
     <Layout nav={nav} active="settings">
       <section>
@@ -636,6 +645,7 @@ export const Settings: FC<{ nav: Nav; origin: string; tagger: boolean }> = ({ na
             + {nav.title}
           </a>
         </p>
+        <p>On a site that cannot be reached from here, one on your tailnet or home network say, it also brings the page's icon along.</p>
       </section>
       <section>
         <div class="head">

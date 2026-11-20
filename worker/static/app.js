@@ -18,6 +18,24 @@
   if (document.body.dataset.done) window.close();
   $("[data-close]")?.addEventListener("click", () => window.close());
 
+  // The bookmarklet's window, for a bookmark whose icon the Worker cannot
+  // fetch: ask the page that opened the window for it. The answer goes into a
+  // hidden file field and is saved like an upload. The question says nothing,
+  // so any opener may hear it; the server checks what comes back.
+  const carry = $("#carry");
+  if (carry && window.opener) {
+    addEventListener("message", (e) => {
+      const icon = e.source === window.opener && e.data?.icon;
+      // The server has the same limit.
+      if (!(icon instanceof Blob) || icon.size > 200 * 1024) return;
+      const files = new DataTransfer();
+      files.items.add(new File([icon], "icon", { type: icon.type }));
+      carry.files = files.files;
+      $("#carried").hidden = false;
+    });
+    window.opener.postMessage("marks:icon", "*");
+  }
+
   for (const form of document.querySelectorAll("form[data-confirm]")) {
     form.addEventListener("submit", (e) => {
       if (!confirm(form.dataset.confirm)) e.preventDefault();

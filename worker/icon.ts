@@ -60,7 +60,7 @@ function sniff(b: Uint8Array, declared: string): string | null {
 // size, null otherwise. `declared` is the type the server or the browser gave.
 export function asIcon(data: ArrayBuffer, declared: string): Icon | null {
   if (!data.byteLength || data.byteLength > MAX_ICON) return null;
-  const type = sniff(new Uint8Array(data), declared);
+  const type = sniff(new Uint8Array(data), declared.split(";")[0].trim().toLowerCase());
   return type ? { type, data } : null;
 }
 
@@ -135,9 +135,8 @@ async function read(body: ReadableStream<Uint8Array>): Promise<ArrayBuffer | nul
 async function image(res: Response | null): Promise<Icon | null> {
   if (!res?.body) return null;
   try {
-    const declared = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
     const data = await read(res.body);
-    return data && asIcon(data, declared);
+    return data && asIcon(data, res.headers.get("content-type") ?? "");
   } catch {
     return null;
   }

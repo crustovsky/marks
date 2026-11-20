@@ -8,10 +8,11 @@ import { loadConfig } from "./config";
 import type { Config } from "./config";
 import * as db from "./db";
 import type { Status } from "./db";
-import { MAX_ICON, asIcon, fetchIcon, findIcon } from "./icon";
+import { MAX_ICON, asIcon, fetchIcon, findIcon, unreachable } from "./icon";
 import { fetchPage } from "./page";
 import { ensureSchema } from "./schema";
 import script from "./static/app.js";
+import bookmarklet from "./static/bookmarklet.js";
 import importer from "./static/import.js";
 import styles from "./static/app.css";
 import { suggestTags, suggestTagsBulk } from "./tagger";
@@ -278,6 +279,12 @@ const fromBookmark = (b: db.Bookmark): FormValues => ({
   uploaded: b.icon_src === "",
 });
 
+// True when a bookmark has no icon and the Worker cannot be counted on for
+// one: the host is out of its reach, or the bookmark is pinned and the search
+// found nothing. The bookmarklet then brings the icon from the page itself.
+const lacksIcon = (url: URL, b: db.Bookmark | null) =>
+  !b?.icon && (b?.icon_src ?? null) === null && (unreachable(url.hostname) || (b?.pinned_pos ?? null) !== null);
+
 // Opened by the search box, the bookmarklet (popup=1) and the Android share sheet.
 app.get("/add", async (c) => {
   const q = c.req.query();
@@ -288,7 +295,11 @@ app.get("/add", async (c) => {
     ? fromBookmark(existing)
     : { url: url?.href ?? raw, title: q.title ?? "", note: "", tags: [], pin: false, later: false, strip: true, iconUrl: "", uploaded: false };
   const message = existing ? "Already saved. Saving again updates it." : undefined;
-  return page(c, <Form nav={await nav(c)} v={v} popup={q.popup === "1"} suggest={!!c.var.cfg.apiKey && !existing && !!url} tagger={!!c.var.cfg.apiKey} message={message} />);
+  const carry = !!url && lacksIcon(url, existing);
+  return page(
+    c,
+    <Form nav={await nav(c)} v={v} popup={q.popup === "1"} suggest={!!c.var.cfg.apiKey && !existing && !!url} tagger={!!c.var.cfg.apiKey} message={message} carry={carry} />,
+  );
 });
 
 app.get("/edit/:id", async (c) => {
@@ -296,7 +307,8 @@ app.get("/edit/:id", async (c) => {
   if (!b) return c.notFound();
   // Lists link here with their own address in `back`, to return to after Save, Cancel or Delete.
   const back = localPath(c.req.query("back") ?? "") ?? undefined;
-  return page(c, <Form nav={await nav(c)} v={fromBookmark(b)} popup={false} suggest={false} tagger={!!c.var.cfg.apiKey} back={back} />);
+  const carry = lacksIcon(new URL(b.url), b);
+  return page(c, <Form nav={await nav(c)} v={fromBookmark(b)} popup={false} suggest={false} tagger={!!c.var.cfg.apiKey} back={back} carry={carry} />);
 });
 
 app.post("/save", async (c) => {
@@ -325,6 +337,10 @@ app.post("/save", async (c) => {
   const file = f.icon_file instanceof File && f.icon_file.size ? f.icon_file : null;
   const upload = file && file.size <= MAX_ICON ? asIcon(await file.arrayBuffer(), file.type) : null;
   if (file && !upload) return fail(`The icon has to be an image of at most ${MAX_ICON / 1024} KB.`);
+  // The icon the bookmarklet brought from the page. Nobody chose it, so one
+  // that is no use is dropped without a word.
+  const brought = f.icon_page instanceof File && f.icon_page.size <= MAX_ICON ? f.icon_page : null;
+  const carried = brought ? asIcon(await brought.arrayBuffer(), brought.type) : null;
   if (!v.title) v.title = (await fetchPage(url.href)).title;
   const id = await db.save(c.env.DB, {
     id: v.id,
@@ -343,11 +359,14 @@ app.post("/save", async (c) => {
   });
   if (id === null) return fail("Another bookmark already has this address.");
   // An icon set by hand: a new file wins over an address, an address over the
-  // file uploaded before. With none of them the icon is found automatically.
+  // file uploaded before, and any of them over the one the bookmarklet brought.
+  // With none of them the icon is found automatically.
   const had = (await db.byId(c.env.DB, id))?.icon_src ?? null;
-  const src = upload ? "" : iconUrl ? iconUrl.href : v.uploaded && had === "" ? "" : null;
-  if (upload || src !== had) await db.setIconSource(c.env.DB, id, src);
-  if (upload) await db.setIcon(c.env.DB, id, upload.type, upload.data);
+  const kept = v.uploaded && had === "";
+  const given = upload ?? (iconUrl || kept ? null : carried);
+  const src = given ? "" : iconUrl ? iconUrl.href : kept ? "" : null;
+  if (given || src !== had) await db.setIconSource(c.env.DB, id, src);
+  if (given) await db.setIcon(c.env.DB, id, given.type, given.data);
   // A pinned bookmark gets its site icon; the tile shows a letter until it is there.
   if (v.pin) c.executionCtx.waitUntil(loadIcon(c, id, false));
   if (popup) return page(c, <Closing title={c.var.cfg.title} />);
@@ -425,8 +444,18 @@ app.post("/n/:id/delete", async (c) => {
   return back(c);
 });
 
+// static/bookmarklet.js as one line, without its opening comment.
+const bookmarkletFor = (origin: string) =>
+  "javascript:" +
+  bookmarklet
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("//"))
+    .join(" ")
+    .replace("ORIGIN", origin);
+
 app.get("/settings", async (c) =>
-  page(c, <Settings nav={await nav(c)} origin={new URL(c.req.url).origin} tagger={!!c.var.cfg.apiKey} />),
+  page(c, <Settings nav={await nav(c)} bookmarklet={bookmarkletFor(new URL(c.req.url).origin)} tagger={!!c.var.cfg.apiKey} />),
 );
 
 // JSON API. Same Access gate as the pages; scripts and the iOS Shortcut use a service token.

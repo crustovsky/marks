@@ -71,7 +71,7 @@ Secret, optional: `ANTHROPIC_API_KEY`. Set it with `npm run wrangler secret put 
 | From | How |
 | --- | --- |
 | The page itself | Paste an address into the search box and press Enter. Anything that is not an address is a search. |
-| A desktop browser | Drag the bookmarklet from **Settings** to the bookmarks bar. It opens a small window with the page's address and title filled in. |
+| A desktop browser | Drag the bookmarklet from **Settings** to the bookmarks bar. It opens a small window with the page's address and title filled in, and brings the page's icon along when the Worker cannot fetch it. |
 | Android | Install the page as an app (browser menu, **Add to Home screen**). It then appears in the share sheet. |
 | iOS | A Shortcut that posts to `/api/add`, see below. |
 | Another browser's bookmarks | **Settings → Import** with the exported HTML file. |
@@ -115,6 +115,8 @@ browser ──▶ Cloudflare Access ──▶ Worker (Hono, server-rendered page
 
 Some sites answer a Worker with a login wall or not at all, and hosts on a tailnet, `.local` names and private addresses cannot be reached from a Worker, so they are never asked. For those the edit form has an **Icon** section: an address to fetch the icon from, or a file to upload (PNG, SVG, ICO or WebP, up to 200 KB). Clearing it goes back to finding the icon automatically.
 
+The bookmarklet is the shortcut for such sites. It runs inside the page you are saving, where the icon can be read, and hands it to the window it opens; the icon is then stored like an upload. This happens only for a bookmark that has no icon and whose host is out of the Worker's reach, or that is pinned and still has none. Pressing the bookmarklet on a site you have already saved opens that bookmark, so it is also how an existing one gets its icon.
+
 **Data**: `bookmarks` (address, title, note, status `saved`, `later` or `archived`, position in the quick access grid), `bookmark_tags`, `icons`, `icon_sources` (icons set by hand) and `notes`. Quick access and read later are fields, not tags.
 
 **API** (same origin, behind Access): `POST /api/add`, `GET /api/suggest?url=&title=`, `POST /api/reorder` with `{ "ids": [...] }`, `POST /api/note` with `{ "text": "..." }`, `POST /api/import` with `{ "items": [{ "url", "title", "folders", "created" }] }` (at most 500), `POST /api/tag` with `{ "after": id }` (tags the next 50 untagged bookmarks), `GET /api/export`.
@@ -139,7 +141,7 @@ worker/url.ts      address cleaning and the duplicate key
 worker/page.ts     reads a page's title
 worker/icon.ts     finds a site's icon
 worker/tagger.ts   tag suggestions
-worker/static/     stylesheet, page script, bookmarks import
+worker/static/     stylesheet, page script, bookmarks import, bookmarklet
 test/              vitest
 ```
 
